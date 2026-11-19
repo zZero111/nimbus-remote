@@ -2787,6 +2787,33 @@ DialogView {
                             visible: Chiaki.settings.psnRefreshToken && Chiaki.settings.psnAuthToken && Chiaki.settings.psnAuthTokenExpiry && Chiaki.settings.psnAccountId
                         }
 
+                        // The Android app asks for this when registering a console
+                        Label {
+                            Layout.alignment: Qt.AlignRight
+                            text: qsTr("PSN Account ID:")
+                            visible: !!Chiaki.settings.psnAccountId
+                        }
+                        TextField {
+                            id: psnAccountIdField
+                            Layout.preferredWidth: 400
+                            readOnly: true
+                            selectByMouse: true
+                            visible: !!Chiaki.settings.psnAccountId
+                            text: Chiaki.settings.streamerMode ? qsTr("hidden (streamer mode)") : Chiaki.settings.psnAccountId
+                        }
+                        Button {
+                            text: qsTr("Copy (for the Android app)")
+                            visible: !!Chiaki.settings.psnAccountId && !Chiaki.settings.streamerMode
+                            flat: true
+                            focusPolicy: Qt.NoFocus
+                            onClicked: {
+                                psnAccountIdField.selectAll();
+                                psnAccountIdField.copy();
+                                psnAccountIdField.deselect();
+                                text = qsTr("Copied");
+                            }
+                        }
+
 
                         Label {
                             Layout.alignment: Qt.AlignRight

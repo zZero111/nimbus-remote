@@ -52,12 +52,15 @@ jobs:
           KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/nimbus.jks"
+            # Secrets set from Windows PowerShell carry a trailing CR/LF; strip it
+            printf %s "$KS_B64" | tr -d '\r\n ' | base64 -d > "$RUNNER_TEMP/nimbus.jks"
+            PW=$(printf %s "$KS_PW" | tr -d '\r\n')
+            ALIAS=$(printf %s "${KS_ALIAS:-nimbus}" | tr -d '\r\n ')
             {
               echo "chiakiKeystore=$RUNNER_TEMP/nimbus.jks"
-              echo "chiakiKeystorePW=$KS_PW"
-              echo "chiakiKeyAlias=${KS_ALIAS:-nimbus}"
-              echo "chiakiKeyPW=$KS_PW"
+              echo "chiakiKeystorePW=$PW"
+              echo "chiakiKeyAlias=$ALIAS"
+              echo "chiakiKeyPW=$PW"
             } > android/local.properties
             echo "SIGNED=1" >> "$GITHUB_ENV"
           else

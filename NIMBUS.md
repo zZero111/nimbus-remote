@@ -10,7 +10,11 @@ No install is needed. Each PC keeps its own settings and console registration.
 
 **Mac (Apple Silicon, M1 or later, macOS 15 or newer):** get `NimbusRemote-macos-arm64-*.dmg`, open it and drag **Nimbus Remote** into Applications. The app isn't signed by a registered Apple developer, so the first time, right-click it and choose **Open**. If macOS still refuses, go to System Settings > Privacy & Security and click **Open Anyway**. Allow **Local Network** access when asked, otherwise it can't find the console. Macs don't update themselves yet: the home screen says when a new version is out and **Download** opens it.
 
-**Updates are automatic on Windows** from `nimbus.5` on. On launch the app checks for a newer release and downloads it in the background. Then either click **Restart & update** on the home screen, or just close the app and it installs on exit. It never updates during a stream. If an update fails, the details are in `%TEMP%\NimbusRemoteUpdate\install.log`. Set the environment variable `NIMBUS_NO_UPDATE=1` to turn updates off.
+**Linux / Steam Deck:** get `NimbusRemote-linux-x86_64-*.AppImage`, make it executable (`chmod +x`, or Properties > Allow executing) and run it. On a Steam Deck, do this in Desktop Mode, then add it to Steam as a non-Steam game to use it in Game Mode.
+
+**Android:** get `NimbusRemote-android-*.apk` on the phone and open it (allow installing from your browser or file manager when asked). The Android app is chiaki's Android app with our name: it plays **on your home Wi-Fi only** (no PSN internet play) and doesn't have the PS5-style screens or the extra features of the PC app. Registering needs your PSN Account ID, which the PC app shows under Settings > PSN & Internet.
+
+**Updates are automatic on Windows** from `nimbus.5` on. Mac and Linux show a notice with a Download button. On launch the app checks for a newer release and downloads it in the background. Then either click **Restart & update** on the home screen, or just close the app and it installs on exit. It never updates during a stream. If an update fails, the details are in `%TEMP%\NimbusRemoteUpdate\install.log`. Set the environment variable `NIMBUS_NO_UPDATE=1` to turn updates off.
 
 ## Publishing a release
 
@@ -20,6 +24,9 @@ powershell -ExecutionPolicy Bypass -File nimbus\release.ps1 -Number 6 -Notes "Wh
 
 This stamps the version into `gui/include/appinfo.h`, builds, packages, zips, commits, pushes and creates the GitHub release that installed copies update to.
 Publishing the release starts `.github/workflows/nimbus-macos.yml`, which builds the Apple Silicon Mac version on GitHub's Macs (about 30 minutes) and attaches the `.dmg` to the same release. The workflow can also be run by hand from the Actions tab.
+The same release also starts `nimbus-linux.yml` (AppImage, about 30-60 minutes) and `nimbus-android.yml` (APK).
+
+**Android signing:** Android only installs an update over an older version signed with the same key. The key lives in `..\android-signing` (outside the repository; back that folder up). Run `powershell -ExecutionPolicy Bypass -File nimbus\set-android-signing-secrets.ps1` once to give it to GitHub as secrets. Until then each APK is signed with a throwaway key and the next version only installs after uninstalling the old one.
 
 ## What's different from chiaki-ng
 
@@ -41,6 +48,9 @@ Publishing the release starts `.github/workflows/nimbus-macos.yml`, which builds
 | **Decoding on its own thread**: the network thread only queues video; a dedicated thread decodes, so heavy frames no longer stall the network. Recovery is gentle: Wi-Fi bursts of several frames are decoded through instead of dropped, a single bad frame doesn't throw away the frames after it, and only a PC that is hopelessly behind (~0.5 s) or keeps failing skips to a fresh keyframe. | `gui/src/asyncdecoder.cpp`, `gui/src/streamsession.cpp` |
 | **Wi-Fi streaming mode**: while streaming, Windows' background Wi-Fi scans (a stutter about once a minute) are paused and the adapter is put in media streaming mode, like Moonlight does. Windows undoes it when the stream ends. | `gui/src/wifistreaming.cpp` |
 | **PS5-style home screen**: a row of console tiles (left/right to move, the selected one grows), the console's name large underneath with a white Play button, a per-console quality selector, a clock, and controller button hints along the bottom. The whole screen scales with the window so it fills a large monitor. | `gui/src/qml/MainView.qml`, `gui/src/qml/StreamPresetBar.qml` |
+| **Instant replay**: turn on "Replay" in the stream menu and the last ~30 s are kept in memory; F10 or "Save" writes them to `Videos\Nimbus Remote\Clip_*.ts` without re-encoding. While on, the app asks the console for a keyframe if none came for 20 s (clips must start on one), so it's off by default | `gui/src/replaybuffer.cpp`, `gui/src/streamsession.cpp`, `gui/src/qml/StreamMenuContent.qml` |
+| **Lighter quality mid-stream**: after about 20 s of heavy packet loss or dropped frames the stream offers to reconnect one preset lighter (and remembers it for that console); the stream menu has the same "Switch to ..." card any time | `gui/src/qml/Main.qml`, `gui/src/qml/StreamView.qml` |
+| **PSN sign-in encrypted**: PSN tokens are stored encrypted for your Windows user (DPAPI) instead of as plain text; older plain-text values are converted on start. Copying settings to another PC means signing in to PSN again there | `gui/src/settings.cpp` |
 | **Motion: Smooth / Lowest latency** on the home screen. Smooth paces frames by their timestamps with vsync so Wi-Fi jitter doesn't show as hitches (about one frame of extra delay); Lowest latency shows each frame as soon as it's decoded. Switching restarts the app | `gui/src/qml/MainView.qml` |
 | **Test connection**: streams for 12 s at the Quality preset, measures ping, packet loss, bitrate and dropped frames, ends without putting the console to sleep, and recommends Performance / Balanced / Quality for that console (one click to use it). Your settings are put back afterwards | `gui/src/qml/Main.qml`, `gui/src/qml/StreamView.qml` |
 | **Copy diagnostics** (copy icon, top right): puts a short report on the clipboard: version, GPU and driver, key settings, network and Wi-Fi link (band, signal, link speed), and the last session's numbers including the decode thread. No IP addresses, console IDs or account data | `gui/src/qmlbackend.cpp`, `gui/src/wifistreaming.cpp`, `gui/src/streamsession.cpp` |
@@ -64,6 +74,7 @@ Everything else (registration, PSN remote play, wake, controller mapping, DualSe
 |---|---|
 | F12 | Screenshot |
 | F9 | Start / stop recording |
+| F10 | Save the last ~30 s (instant replay must be on) |
 | F11 | Fullscreen |
 | Ctrl+O | Stream menu |
 | Ctrl+M | Mute mic |
@@ -92,6 +103,7 @@ Tests:
 bash nimbus/test-screenshot.sh   # colour conversion for NV12 / P010 HDR screenshots (8 checks)
 bash nimbus/test-recorder.sh     # encodes H.264 + Opus, records mid-stream, decodes the file back (20 checks)
 bash nimbus/test-asyncdecoder.sh # decode thread: order, Wi-Fi bursts, non-blocking queue, overflow recovery, errors (18 checks)
+bash nimbus/test-replay.sh       # instant replay: 45 s in, ~35 s clip from a keyframe, decodes cleanly, memory cap (15 checks)
 ```
 
 ## Testing status
