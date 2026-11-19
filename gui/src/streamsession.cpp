@@ -19,6 +19,10 @@
 #include <QMutexLocker>
 #include <QStandardPaths>
 #include <QtMath>
+#include <QPointer>
+#include <QThreadPool>
+#include <QCoreApplication>
+#include <memory>
 #include <atomic>
 
 #include <algorithm>
@@ -887,6 +891,8 @@ bool StreamSession::RecordingVideoSampleCb(uint8_t *buf, size_t buf_size, int32_
 	self->recorder.notePossibleParameterSets(buf, buf_size, codec);
 	if(self->recording_active.load(std::memory_order_relaxed))
 		self->recorder.writeVideo(buf, buf_size);
+	if(self->replay_enabled.load(std::memory_order_relaxed) && self->replay)
+		self->replay->pushVideo(buf, buf_size, StreamRecorder::clockUs());
 	if(self->async_decoder)
 	{
 		// Queued for the decode thread. Decode errors are handled there by requesting a keyframe.
@@ -910,6 +916,8 @@ void StreamSession::RecordingAudioFrameCb(uint8_t *buf, size_t buf_size, void *u
 	auto self = static_cast<StreamSession *>(user);
 	if(self->recording_active.load(std::memory_order_relaxed))
 		self->recorder.writeAudio(buf, buf_size);
+	if(self->replay_enabled.load(std::memory_order_relaxed) && self->replay)
+		self->replay->pushAudio(buf, buf_size, StreamRecorder::clockUs());
 	if(self->opus_sink.frame_cb)
 		self->opus_sink.frame_cb(buf, buf_size, self->opus_sink.user);
 }
@@ -972,6 +980,90 @@ void StreamSession::StopRecording()
 		emit RecordingSaved(path);
 	else
 		emit RecordingFailed(tr("No video was received while recording"));
+}
+
+void StreamSession::SetReplayEnabled(bool enabled)
+{
+	if(enabled == replay_enabled.load())
+		return;
+	if(!replay)
+	{
+		const auto codec = chiaki_codec_is_h265(session.connect_info.video_profile.codec)
+			? StreamRecorder::VideoCodec::H265 : StreamRecorder::VideoCodec::H264;
+		replay = std::make_unique<ReplayBuffer>(codec);
+	}
+	if(!enabled)
+	{
+		replay_enabled.store(false);
+		replay->clear();
+		if(replay_timer)
+			replay_timer->stop();
+		emit ReplayChanged();
+		return;
+	}
+	replay->clear();
+	replay_enabled.store(true);
+	// A clip has to start on a keyframe, and the PS5 rarely sends them on its own:
+	// ask for one now and whenever the last one is more than 20 s old
+	chiaki_session_request_idr(&session);
+	if(!replay_timer)
+	{
+		replay_timer = new QTimer(this);
+		replay_timer->setInterval(5000);
+		connect(replay_timer, &QTimer::timeout, this, [this]() {
+			if(!replay_enabled.load() || !replay)
+				return;
+			const int64_t age = replay->keyframeAgeUs(StreamRecorder::clockUs());
+			if(age < 0 || age > 20 * 1000000LL)
+				chiaki_session_request_idr(&session);
+			emit ReplayChanged();
+		});
+	}
+	replay_timer->start();
+	CHIAKI_LOGI(log.GetChiakiLog(), "Instant replay on");
+	emit ReplayChanged();
+}
+
+double StreamSession::GetReplaySeconds() const
+{
+	if(!replay_enabled.load() || !replay)
+		return 0.0;
+	return replay->seconds(StreamRecorder::clockUs());
+}
+
+void StreamSession::saveReplay()
+{
+	if(!replay_enabled.load() || !replay)
+	{
+		emit ReplayFailed(tr("Instant replay is off. Turn it on in the stream menu first."));
+		return;
+	}
+	if(replay_saving.exchange(true))
+		return;
+	QString base = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+	if(base.isEmpty())
+		base = QDir::homePath();
+	const QString dir = QDir(base).filePath(APP_DISPLAY_NAME);
+	QDir().mkpath(dir);
+	const QString path = QDir(dir).filePath(QStringLiteral("Clip_%1.ts").arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss")));
+	const auto &profile = session.connect_info.video_profile;
+	const int width = int(profile.width), height = int(profile.height), channels = audio_channels;
+	// Take the snapshot here; writing happens on a worker thread and doesn't touch the session
+	auto snap = std::make_shared<ReplayBuffer::Snapshot>(replay->snapshot());
+	QPointer<StreamSession> self(this);
+	QThreadPool::globalInstance()->start([self, snap, path, width, height, channels]() {
+		QString error;
+		const bool ok = ReplayBuffer::write(*snap, path, width, height, channels, &error);
+		QMetaObject::invokeMethod(qApp, [self, ok, path, error]() {
+			if(!self)
+				return;
+			self->replay_saving.store(false);
+			if(ok)
+				emit self->ReplaySaved(path);
+			else
+				emit self->ReplayFailed(error);
+		}, Qt::QueuedConnection);
+	});
 }
 
 void StreamSession::GoToBed()

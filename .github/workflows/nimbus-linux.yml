@@ -1,0 +1,68 @@
+# Builds Nimbus Remote for Linux and Steam Deck (x86_64 AppImage) and attaches it to the GitHub
+# release. Runs automatically when nimbus/release.ps1 publishes a release, or by hand from the
+# Actions tab (then the AppImage is only kept as a workflow artifact).
+name: Nimbus Remote Linux
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    name: Linux x86_64 AppImage
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || github.ref_name }}
+    steps:
+      - name: Setup Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install podman
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+          submodules: recursive
+          path: chiaki-ng
+
+      - name: Add QmlWebEngine import
+        working-directory: chiaki-ng
+        run: cp scripts/qtwebengine_import.qml gui/src/qml/
+
+      - name: Build AppImage (chiaki-ng builder container)
+        working-directory: chiaki-ng
+        run: |
+          set -xe
+          podman run --rm \
+            -v "`pwd`:/build/chiaki" \
+            -w "/build/chiaki" \
+            --device /dev/fuse \
+            --cap-add SYS_ADMIN \
+            -t docker.io/streetpea/chiaki-ng-builder:qt6.9.3 \
+            /bin/bash -c "sudo -E scripts/build-appimage.sh /build/appdir"
+
+      - name: Name it
+        working-directory: chiaki-ng
+        run: |
+          OUT="NimbusRemote-linux-x86_64-${TAG#v}.AppImage"
+          cp appimage/chiaki-ng.AppImage "$OUT"
+          chmod +x "$OUT"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUT }}
+          path: chiaki-ng/${{ env.OUT }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        working-directory: chiaki-ng
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$OUT" --clobber --repo "${{ github.repository }}"

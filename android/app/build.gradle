@@ -25,11 +25,13 @@ android {
     ndkVersion "28.2.13676358"
 
     defaultConfig {
-        applicationId "com.metallic.chiaki"
+        // Own id, so it installs beside the original Chiaki app
+        applicationId "io.github.zzero111.nimbusremote"
         minSdk 24
         targetSdk 35
-        versionCode 12
-        versionName chiakiVersion
+        // CI sets these from the release tag (nimbus.N -> 100 + N); local builds use the defaults
+        versionCode((System.getenv("NIMBUS_ANDROID_VERSION_CODE") ?: "12") as int)
+        versionName(System.getenv("NIMBUS_VERSION_NAME") ?: chiakiVersion)
         externalNativeBuild {
             cmake {
                 arguments "-DCHIAKI_ENABLE_TESTS=OFF",

@@ -81,7 +81,7 @@ Updater::Updater(QObject *parent)
 
 bool Updater::canNotifyOnly()
 {
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
 	return !qEnvironmentVariableIsSet("NIMBUS_NO_UPDATE");
 #else
 	return false;

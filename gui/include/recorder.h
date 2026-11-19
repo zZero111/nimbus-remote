@@ -21,7 +21,8 @@ public:
 	~StreamRecorder();
 
 	/// Opens `path` for writing. Video is written from the next keyframe on.
-	bool start(const QString &path, VideoCodec codec, int width, int height, int audio_channels, int audio_rate, QString *error);
+	/// `start_at_us`: time base for samples written with explicit times (see writeVideo); -1 = now.
+	bool start(const QString &path, VideoCodec codec, int width, int height, int audio_channels, int audio_rate, QString *error, int64_t start_at_us = -1);
 	/// Finishes the file. Safe to call when not recording.
 	void stop();
 	bool isRecording() const;
@@ -32,9 +33,12 @@ public:
 	qint64 bytesWritten() const;
 
 	/// One Annex B access unit from the console. Thread-safe.
-	void writeVideo(const uint8_t *buf, size_t size);
+	/// `at_us`: when the sample arrived (StreamRecorder::clockUs()); -1 = now. Used to write buffered samples.
+	void writeVideo(const uint8_t *buf, size_t size, int64_t at_us = -1);
 	/// One Opus packet from the console. Thread-safe.
-	void writeAudio(const uint8_t *buf, size_t size);
+	void writeAudio(const uint8_t *buf, size_t size, int64_t at_us = -1);
+	/// The clock the recorder uses, in microseconds.
+	static int64_t clockUs();
 
 	/// Remembers the latest SPS/PPS(/VPS) seen in the stream. The console sends them once at
 	/// stream start, so they're put in front of the first keyframe of a recording started later.

@@ -7800,6 +7800,10 @@ bool QmlMainWindow::handleShortcut(QKeyEvent *event)
             if (session)
                 session->toggleRecording();
             return true;
+        case Qt::Key_F10:
+            if (session)
+                session->saveReplay();
+            return true;
         case Qt::Key_F11:
             if (windowState() != Qt::WindowFullScreen)
                 fullscreenTime();

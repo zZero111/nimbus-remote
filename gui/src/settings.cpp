@@ -14,6 +14,59 @@
 static const int PORT_GUESS_COUNT_DEFAULT = 75;
 static const int PORT_GUESS_SOCKS_DEFAULT = 250;
 
+// PSN tokens give access to the PlayStation account, so they are not stored as plain text.
+// On Windows they are encrypted with DPAPI for the current Windows user ("dpapi:" + base64).
+// Values from older versions (plain text) are still read and get encrypted on the next start.
+// A value that can't be decrypted (settings copied to another PC or user) reads as empty,
+// which makes the app ask for a PSN sign-in again.
+#if defined(_WIN32)
+#include <windows.h>
+#include <wincrypt.h>
+static const QByteArray secret_entropy = QByteArrayLiteral("NimbusRemote PSN token");
+static QString ProtectSecret(const QString &plain)
+{
+	if(plain.isEmpty())
+		return plain;
+	const QByteArray in = plain.toUtf8();
+	DATA_BLOB in_blob { static_cast<DWORD>(in.size()), reinterpret_cast<BYTE *>(const_cast<char *>(in.constData())) };
+	DATA_BLOB entropy { static_cast<DWORD>(secret_entropy.size()), reinterpret_cast<BYTE *>(const_cast<char *>(secret_entropy.constData())) };
+	DATA_BLOB out_blob {};
+	if(!CryptProtectData(&in_blob, L"Nimbus Remote", &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out_blob))
+		return plain; // keep working rather than lose the sign-in
+	const QByteArray out(reinterpret_cast<const char *>(out_blob.pbData), static_cast<int>(out_blob.cbData));
+	LocalFree(out_blob.pbData);
+	return QStringLiteral("dpapi:") + QString::fromLatin1(out.toBase64());
+}
+static QString UnprotectSecret(const QString &stored)
+{
+	if(!stored.startsWith(QStringLiteral("dpapi:")))
+		return stored; // older plain-text value
+	const QByteArray in = QByteArray::fromBase64(stored.mid(6).toLatin1());
+	DATA_BLOB in_blob { static_cast<DWORD>(in.size()), reinterpret_cast<BYTE *>(const_cast<char *>(in.constData())) };
+	DATA_BLOB entropy { static_cast<DWORD>(secret_entropy.size()), reinterpret_cast<BYTE *>(const_cast<char *>(secret_entropy.constData())) };
+	DATA_BLOB out_blob {};
+	if(!CryptUnprotectData(&in_blob, nullptr, &entropy, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out_blob))
+		return QString();
+	const QString out = QString::fromUtf8(reinterpret_cast<const char *>(out_blob.pbData), static_cast<int>(out_blob.cbData));
+	SecureZeroMemory(out_blob.pbData, out_blob.cbData);
+	LocalFree(out_blob.pbData);
+	return out;
+}
+#else
+static QString ProtectSecret(const QString &plain) { return plain; }
+static QString UnprotectSecret(const QString &stored) { return stored; }
+#endif
+
+static void ProtectStoredSecrets(QSettings *s)
+{
+	for(const char *key : { "settings/psn_auth_token", "settings/psn_refresh_token" })
+	{
+		const QString v = s->value(key).toString();
+		if(!v.isEmpty() && !v.startsWith(QStringLiteral("dpapi:")))
+			s->setValue(key, ProtectSecret(v));
+	}
+}
+
 static const QMap<PlaceboFrameMixer, QString> placebo_frame_mixer_values = {
 	{ PlaceboFrameMixer::None, "none" },
 	{ PlaceboFrameMixer::Oversample, "oversample" },
@@ -272,6 +325,7 @@ Settings::Settings(const QString &conf, QObject *parent) : QObject(parent),
 	MigrateSettings(&settings);
 	MigrateVideoProfile(&settings);
 	MigrateControllerMappings(&settings);
+	ProtectStoredSecrets(&settings);
 	manual_hosts_id_next = 0;
 	settings.setValue("version", SETTINGS_VERSION);
 	LoadRegisteredHosts();
@@ -933,22 +987,22 @@ void Settings::SetEchoSuppressLevel(int reduceby)
 
 QString Settings::GetPsnAuthToken() const
 {
-	return settings.value("settings/psn_auth_token").toString();
+	return UnprotectSecret(settings.value("settings/psn_auth_token").toString());
 }
 
 void Settings::SetPsnAuthToken(QString auth_token)
 {
-	settings.setValue("settings/psn_auth_token", auth_token);
+	settings.setValue("settings/psn_auth_token", ProtectSecret(auth_token));
 }
 
 QString Settings::GetPsnRefreshToken() const
 {
-	return settings.value("settings/psn_refresh_token").toString();
+	return UnprotectSecret(settings.value("settings/psn_refresh_token").toString());
 }
 
 void Settings::SetPsnRefreshToken(QString refresh_token)
 {
-	settings.setValue("settings/psn_refresh_token", refresh_token);
+	settings.setValue("settings/psn_refresh_token", ProtectSecret(refresh_token));
 }
 
 QString Settings::GetPsnAuthTokenExpiry() const

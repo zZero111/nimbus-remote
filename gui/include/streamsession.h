@@ -34,6 +34,7 @@
 #include "recorder.h"
 #include "asyncdecoder.h"
 #include "wifistreaming.h"
+#include "replaybuffer.h"
 
 #include <atomic>
 #include <memory>
@@ -167,6 +168,8 @@ class StreamSession : public QObject
 	Q_PROPERTY(bool cantDisplay READ GetCantDisplay NOTIFY CantDisplayChanged)
 	Q_PROPERTY(int framesLost READ GetFramesLost NOTIFY FramesLostChanged)
 	Q_PROPERTY(bool recording READ IsRecording NOTIFY RecordingChanged)
+	Q_PROPERTY(bool replayEnabled READ IsReplayEnabled WRITE SetReplayEnabled NOTIFY ReplayChanged)
+	Q_PROPERTY(double replaySeconds READ GetReplaySeconds NOTIFY ReplayChanged)
 	Q_PROPERTY(double recordingSeconds READ GetRecordingSeconds NOTIFY RecordingSecondsChanged)
 
 	private:
@@ -180,6 +183,10 @@ class StreamSession : public QObject
 		// Recording: the console's encoded video/audio are tapped before decoding
 		StreamRecorder recorder;
 		std::atomic<bool> recording_active{false};
+		std::unique_ptr<ReplayBuffer> replay;
+		std::atomic<bool> replay_enabled{false};
+		QTimer *replay_timer = nullptr;
+		std::atomic<bool> replay_saving{false};
 		ChiakiAudioSink opus_sink = {};
 		int audio_channels = 2;
 		QTimer *recording_timer = nullptr;
@@ -369,6 +376,11 @@ class StreamSession : public QObject
 	Q_INVOKABLE bool RequestIDR();
 	/// Starts or stops recording the stream to <Videos>/Nimbus Remote
 	Q_INVOKABLE void toggleRecording();
+	/// Instant replay: keep the last ~30 s in memory; saveReplay() writes them to a clip.
+	bool IsReplayEnabled() const { return replay_enabled.load(); }
+	void SetReplayEnabled(bool enabled);
+	double GetReplaySeconds() const;
+	Q_INVOKABLE void saveReplay();
 	bool IsRecording() const { return recording_active.load(); }
 	double GetRecordingSeconds() const { return recorder.elapsedSeconds(); }
 		void ToggleMute();
@@ -428,6 +440,9 @@ class StreamSession : public QObject
 		void RecordingSecondsChanged();
 		void RecordingSaved(const QString &path);
 		void RecordingFailed(const QString &error);
+		void ReplayChanged();
+		void ReplaySaved(const QString &path);
+		void ReplayFailed(const QString &error);
 		void MeasuredBitrateChanged();
 		void PingMsChanged();
 		void AveragePacketLossChanged();

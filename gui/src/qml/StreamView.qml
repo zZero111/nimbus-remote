@@ -323,6 +323,68 @@ Item {
             ignoreUnknownSignals: true
             function onRecordingSaved(path) { streamToast.show(qsTr("Recording saved to %1").arg(path)); }
             function onRecordingFailed(error) { streamToast.show(qsTr("Recording failed: %1").arg(error)); }
+            function onReplaySaved(path) { streamToast.show(qsTr("Clip saved to %1").arg(path)); }
+            function onReplayFailed(error) { streamToast.show(qsTr("Couldn't save clip: %1").arg(error)); }
+        }
+    }
+
+    // The connection kept struggling: offer a lighter quality (reconnects the stream)
+    Rectangle {
+        id: strugglePrompt
+        visible: root.struggleOffered && !!root.lighterPreset && !dismissed && !!Chiaki.session
+        property bool dismissed: false
+        Connections {
+            target: root
+            function onStruggleOfferedChanged() { strugglePrompt.dismissed = false; strugglePromptTimer.restart(); }
+        }
+        Timer {
+            id: strugglePromptTimer
+            interval: 20000
+            onTriggered: strugglePrompt.dismissed = true
+        }
+        anchors {
+            horizontalCenter: parent.horizontalCenter
+            top: parent.top
+            topMargin: 28
+        }
+        z: 10
+        radius: 22
+        implicitWidth: struggleRow.implicitWidth + 36
+        implicitHeight: struggleRow.implicitHeight + 22
+        color: Qt.rgba(0.03, 0.05, 0.10, 0.92)
+        border.color: Qt.rgba(0.94, 0.66, 0.18, 0.8)
+        RowLayout {
+            id: struggleRow
+            anchors.centerIn: parent
+            spacing: 14
+            ColumnLayout {
+                spacing: 2
+                Label {
+                    text: qsTr("Your connection is struggling")
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                }
+                Label {
+                    text: qsTr("Reconnect at %1 for a smoother stream? Takes about 10 seconds. Also in the stream menu.")
+                        .arg(root.lighterPreset ? qsTr(root.lighterPreset.name) : "")
+                    font.pixelSize: 13
+                    color: Qt.rgba(1, 1, 1, 0.7)
+                }
+            }
+            Button {
+                text: qsTr("Switch to %1").arg(root.lighterPreset ? qsTr(root.lighterPreset.name) : "")
+                focusPolicy: Qt.NoFocus
+                Material.background: "white"
+                Material.foreground: "#0b0f17"
+                Material.roundedScale: Material.SmallScale
+                onClicked: root.switchToLighterAndReconnect()
+            }
+            Button {
+                text: qsTr("Not now")
+                flat: true
+                focusPolicy: Qt.NoFocus
+                onClicked: strugglePrompt.dismissed = true
+            }
         }
     }
 

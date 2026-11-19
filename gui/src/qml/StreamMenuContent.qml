@@ -39,7 +39,7 @@ FocusScope {
     }
 
     // Left/right between the cards that are currently shown
-    readonly property var order: [closeCard, volumeCard, micCard, statsCard, snapCard, recCard, pictureCard, advancedCard, zoomCard, zoomLevelCard, stretchCard, displayCard]
+    readonly property var order: [closeCard, volumeCard, micCard, statsCard, snapCard, recCard, replayCard, clipCard, lighterCard, pictureCard, advancedCard, zoomCard, zoomLevelCard, stretchCard, displayCard]
     function move(from, step) {
         const list = order.filter(c => c.visible && c.enabled);
         let i = list.indexOf(from);
@@ -48,6 +48,17 @@ FocusScope {
         const next = list[(i + step + list.length) % list.length];
         if (next)
             next.forceActiveFocus(Qt.TabFocusReason);
+    }
+
+    // Scroll the card row so `card` is fully visible (with some margin)
+    function ensureVisible(card) {
+        const left = card.x + cards.x - 40;
+        const right = card.x + cards.x + card.width + 40;
+        const maxX = Math.max(0, cardsFlick.contentWidth - cardsFlick.width);
+        if (left < cardsFlick.contentX)
+            cardsFlick.contentX = Math.max(0, left);
+        else if (right > cardsFlick.contentX + cardsFlick.width)
+            cardsFlick.contentX = Math.min(maxX, right - cardsFlick.width);
     }
 
     Keys.onEscapePressed: closeRequested()
@@ -169,6 +180,7 @@ FocusScope {
         Keys.onEnterPressed: clicked()
         Keys.onEscapePressed: menu.closeRequested()
         onHoveredChanged: if (hovered) forceActiveFocus(Qt.MouseFocusReason)
+        onActiveFocusChanged: if (activeFocus) menu.ensureVisible(card)
 
         background: Rectangle {
             radius: 18
@@ -219,14 +231,27 @@ FocusScope {
         ToolTip.delay: 500
     }
 
-    Row {
-        id: cards
+    // Scrolls sideways when the cards don't fit; the selected card is kept in view
+    Flickable {
+        id: cardsFlick
         anchors {
             left: parent.left
-            leftMargin: 40
+            right: parent.right
             top: infoRow.bottom
-            topMargin: 22
+            topMargin: 14
         }
+        height: 132
+        contentWidth: cards.width + 80
+        contentHeight: height
+        flickableDirection: Flickable.HorizontalFlick
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+        Behavior on contentX { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+
+    Row {
+        id: cards
+        x: 40
+        y: 8
         spacing: 16
 
         Card {
@@ -331,6 +356,46 @@ FocusScope {
             onClicked: Chiaki.session.toggleRecording()
         }
 
+        // Instant replay: on/off, and save the last ~30 s
+        Card {
+            id: replayCard
+            readonly property bool replayOn: !!(Chiaki.session && Chiaki.session.replayEnabled)
+            enabled: !!(Chiaki.session && Chiaki.session.connected)
+            lit: replayOn
+            iconSource: "qrc:/icons/replay-24px.svg"
+            caption: replayOn ? qsTr("Replay on") : qsTr("Replay off")
+            ToolTip.text: qsTr("Keeps the last 30 seconds so you can save them as a clip (F10). Uses a little more bandwidth while on.")
+            onClicked: {
+                const on = !Chiaki.session.replayEnabled;
+                Chiaki.session.replayEnabled = on;
+                root.replayPreferred = on;
+            }
+        }
+        Card {
+            id: clipCard
+            readonly property real secs: Chiaki.session ? Chiaki.session.replaySeconds : 0
+            visible: replayCard.replayOn
+            enabled: secs >= 2
+            cardWidth: 130
+            iconSource: "qrc:/icons/save-24px.svg"
+            caption: secs >= 2 ? qsTr("Save %1 s").arg(Math.min(30, Math.round(secs))) : qsTr("Filling…")
+            ToolTip.text: qsTr("Save the last 30 seconds as a clip (F10)")
+            onClicked: Chiaki.session.saveReplay()
+        }
+
+        Card {
+            id: lighterCard
+            visible: !!root.lighterPreset && !!(Chiaki.session && Chiaki.session.connected)
+            cardWidth: 150
+            iconSource: "qrc:/icons/refresh-24px.svg"
+            caption: root.lighterPreset ? qsTr("Switch to %1").arg(qsTr(root.lighterPreset.name)) : ""
+            ToolTip.text: qsTr("Reconnect at a lighter quality for a smoother stream (takes about 10 seconds)")
+            onClicked: {
+                menu.closeRequested();
+                root.switchToLighterAndReconnect();
+            }
+        }
+
         Card {
             id: pictureCard
             cardWidth: 150
@@ -416,6 +481,7 @@ FocusScope {
             onClicked: menu.displaySettingsRequested()
         }
     }
+    } // cardsFlick
 
     // ---- Controller hints ----
     Row {

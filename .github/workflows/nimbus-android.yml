@@ -1,0 +1,99 @@
+# Builds the Nimbus Remote Android app (APK) and attaches it to the GitHub release.
+# Runs automatically when nimbus/release.ps1 publishes a release, or by hand from the Actions tab.
+#
+# Signing: Android only installs an update over an older version when both are signed with the
+# same key. With the ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PW / ANDROID_KEY_ALIAS secrets set
+# (see NIMBUS.md), every release is signed with that key. Without them the APK gets a throwaway
+# debug key: it installs fine, but the next version has to be installed after uninstalling.
+name: Nimbus Remote Android
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android NDK, CMake and protobuf tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler python3-protobuf
+          pip3 install --user 'protobuf>=5,<6' --break-system-packages || true
+
+      - name: Version from the release tag
+        run: |
+          N=$(echo "$TAG" | sed -n 's/.*nimbus\.\([0-9]\+\).*/\1/p')
+          echo "NIMBUS_ANDROID_VERSION_CODE=$((100 + ${N:-0}))" >> "$GITHUB_ENV"
+          echo "NIMBUS_VERSION_NAME=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Signing key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PW: ${{ secrets.ANDROID_KEYSTORE_PW }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/nimbus.jks"
+            {
+              echo "chiakiKeystore=$RUNNER_TEMP/nimbus.jks"
+              echo "chiakiKeystorePW=$KS_PW"
+              echo "chiakiKeyAlias=${KS_ALIAS:-nimbus}"
+              echo "chiakiKeyPW=$KS_PW"
+            } > android/local.properties
+            echo "SIGNED=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No signing secrets set: building with a throwaway debug key"
+            echo "SIGNED=0" >> "$GITHUB_ENV"
+          fi
+          echo "sdk.dir=$ANDROID_HOME" >> android/local.properties
+
+      - name: Build
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          if [ "$SIGNED" = "1" ]; then
+            ./gradlew --no-daemon assembleRelease
+            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/out.apk"
+          else
+            ./gradlew --no-daemon assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/out.apk"
+          fi
+          rm -f local.properties
+
+      - name: Name it
+        run: |
+          OUT="NimbusRemote-android-${TAG#v}.apk"
+          mv out.apk "$OUT"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUT }}
+          path: ${{ env.OUT }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$OUT" --clobber --repo "${{ github.repository }}"

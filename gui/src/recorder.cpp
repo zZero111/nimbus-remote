@@ -56,12 +56,17 @@ StreamRecorder::~StreamRecorder()
 
 int64_t StreamRecorder::nowUs() const
 {
+	return clockUs();
+}
+
+int64_t StreamRecorder::clockUs()
+{
 	return std::chrono::duration_cast<std::chrono::microseconds>(
 		std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 bool StreamRecorder::start(const QString &path, VideoCodec video_codec, int width, int height,
-	int audio_channels, int rate, QString *error)
+	int audio_channels, int rate, QString *error, int64_t start_at_us)
 {
 	QMutexLocker locker(&mutex);
 	closeLocked();
@@ -117,7 +122,7 @@ bool StreamRecorder::start(const QString &path, VideoCodec video_codec, int widt
 
 	codec = video_codec;
 	file_path = path;
-	start_us = nowUs();
+	start_us = start_at_us >= 0 ? start_at_us : nowUs();
 	got_keyframe = false;
 	audio_samples = 0;
 	last_video_pts = -1;
@@ -228,7 +233,7 @@ void StreamRecorder::notePossibleParameterSets(const uint8_t *buf, size_t size, 
 	parameter_sets = QByteArray(reinterpret_cast<const char *>(buf), qsizetype(end));
 }
 
-void StreamRecorder::writeVideo(const uint8_t *buf, size_t size)
+void StreamRecorder::writeVideo(const uint8_t *buf, size_t size, int64_t at_us)
 {
 	if(!buf || !size)
 		return;
@@ -256,7 +261,7 @@ void StreamRecorder::writeVideo(const uint8_t *buf, size_t size)
 		memcpy(pkt->data + prefix, buf, size);
 		pkt->stream_index = video_stream->index;
 		// Clock-based, but never equal to or before the previous frame (the muxer rejects that)
-		int64_t pts = av_rescale_q(nowUs() - start_us, AVRational{1, 1000000}, video_stream->time_base);
+		int64_t pts = av_rescale_q((at_us >= 0 ? at_us : nowUs()) - start_us, AVRational{1, 1000000}, video_stream->time_base);
 		if(pts <= last_video_pts)
 			pts = last_video_pts + 1;
 		last_video_pts = pts;
@@ -268,7 +273,7 @@ void StreamRecorder::writeVideo(const uint8_t *buf, size_t size)
 	av_packet_free(&pkt);
 }
 
-void StreamRecorder::writeAudio(const uint8_t *buf, size_t size)
+void StreamRecorder::writeAudio(const uint8_t *buf, size_t size, int64_t at_us)
 {
 	if(!buf || !size)
 		return;
@@ -288,7 +293,7 @@ void StreamRecorder::writeAudio(const uint8_t *buf, size_t size)
 		// Audio arrives at a steady rate, so count samples instead of using the clock.
 		// If the clock runs more than 200 ms ahead (packets were lost), skip forward to it;
 		// never move backwards.
-		const int64_t clock_pts = nowUs() - start_us;
+		const int64_t clock_pts = (at_us >= 0 ? at_us : nowUs()) - start_us;
 		int64_t sample_pts = audio_samples * 1000000 / 48000;
 		if(clock_pts > sample_pts + 200000)
 		{

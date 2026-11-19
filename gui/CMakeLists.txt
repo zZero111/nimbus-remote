@@ -67,6 +67,8 @@ set(SOURCE_FILES
 	src/updater.cpp
 	include/wifistreaming.h
 	src/wifistreaming.cpp
+	include/replaybuffer.h
+	src/replaybuffer.cpp
 	)
 set(RESOURCE_FILES "")
 
@@ -113,7 +115,7 @@ target_link_libraries(chiaki PkgConfig::LIBPLACEBO placebo-libav-impl FFMPEG::av
 
 target_link_libraries(chiaki chiaki-lib)
 if(WIN32)
-	target_link_libraries(chiaki wlanapi)
+	target_link_libraries(chiaki wlanapi crypt32)
 endif()
 if(CHIAKI_ENABLE_CLI)
 	add_definitions(-DCHIAKI_ENABLE_CLI)

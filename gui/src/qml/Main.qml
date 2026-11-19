@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import QtQuick.Controls.Material
+import QtCore
 
 import org.streetpea.chiaking
 import "presets.js" as Presets
@@ -703,6 +704,101 @@ Item {
     // MainView stores the per-console preset
     signal connectionTestApplied(var host, string key)
 
+    // ---- Preferences that live outside the C++ settings ----
+    Settings {
+        id: nimbusPrefs
+        category: "nimbus_prefs"
+        property bool replayEnabled: false
+    }
+    property alias replayPreferred: nimbusPrefs.replayEnabled
+
+    // Turn instant replay back on for each new stream if it was on last time
+    Connections {
+        target: Chiaki.session
+        ignoreUnknownSignals: true
+        function onConnectedChanged() {
+            if (Chiaki.session && Chiaki.session.connected && root.replayPreferred && !Chiaki.session.replayEnabled)
+                Chiaki.session.replayEnabled = true;
+        }
+    }
+
+    // ---- Lighter quality during a stream ----
+    // The PS5 fixes the stream quality when a session starts, so changing it means reconnecting.
+    // When the connection keeps struggling, the stream offers that; the in-game menu always can.
+    readonly property var currentPreset: {
+        Chiaki.settings.resolutionLocalPS5; Chiaki.settings.resolutionRemotePS5; Chiaki.settings.bitrateLocalPS5;
+        for (const p of Presets.list)
+            if (Presets.matches(Chiaki.settings, p))
+                return p;
+        return null; // custom settings
+    }
+    // Next lighter preset, or null if already on the lightest
+    readonly property var lighterPreset: {
+        if (!currentPreset)
+            return Presets.byKey("performance");
+        const i = Presets.list.indexOf(currentPreset);
+        return i > 0 ? Presets.list[i - 1] : null;
+    }
+    property string reconnectConsoleId: ""
+    property bool struggleOffered: false
+    property int struggleSeconds: 0
+
+    function switchToLighterAndReconnect() {
+        const p = lighterPreset;
+        if (!p || !Chiaki.session)
+            return;
+        Presets.apply(Chiaki.settings, p);
+        if (lastConsole) {
+            // Remember it for this console so the next session starts lighter too
+            connectionTestApplied(lastConsole, p.key);
+            reconnectConsoleId = Presets.consoleId(lastConsole);
+        }
+        Chiaki.stopSession(false);
+    }
+
+    Timer {
+        // Reconnect shortly after the old session has closed
+        id: reconnectTimer
+        interval: 1500
+        onTriggered: {
+            const id = root.reconnectConsoleId;
+            root.reconnectConsoleId = "";
+            for (let i = 0; i < Chiaki.hosts.length; i++) {
+                const h = Chiaki.hosts[i];
+                if (h.display && Presets.consoleId(h) === id) {
+                    root.lastConsole = h;
+                    if (h.discovered)
+                        Chiaki.connectToHost(i, h.name);
+                    else
+                        Chiaki.connectToHost(i);
+                    return;
+                }
+            }
+            root.showToast(qsTr("Couldn't find the console to reconnect. Press Play to start again."));
+        }
+    }
+
+    // Watches the stream: about 20 s of sustained trouble -> offer a lighter preset (once per session)
+    Timer {
+        interval: 1000
+        repeat: true
+        running: !!Chiaki.session && Chiaki.session.connected && !root.connectionTest && !root.struggleOffered
+        property int lastDropped: -1
+        onTriggered: {
+            const loss = isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss : 0;
+            const dropped = Chiaki.window.droppedFrames;
+            const droppedNow = lastDropped >= 0 ? dropped - lastDropped : 0;
+            lastDropped = dropped;
+            const bad = loss > 0.04 || droppedNow >= 4;
+            root.struggleSeconds = bad ? root.struggleSeconds + 1 : Math.max(0, root.struggleSeconds - 2);
+            if (root.struggleSeconds >= 20 && root.lighterPreset) {
+                root.struggleOffered = true;
+                root.struggleLoss = loss;
+            }
+        }
+    }
+    property real struggleLoss: 0
+
     function finishSessionQuality() {
         const q = sessionQuality;
         sessionQuality = { samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0, bitrateSum: 0, dropped: 0 };
@@ -736,13 +832,19 @@ Item {
 
         function onSessionChanged() {
             if (Chiaki.session) {
-                root.sessionQuality = { samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0 };
+                root.sessionQuality = { samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0, bitrateSum: 0, dropped: 0 };
                 root.sessionAdvice = "";
+                root.struggleOffered = false;
+                root.struggleSeconds = 0;
                 root.showStreamView();
             } else {
                 root.finishSessionQuality();
                 if (root.connectionTest)
                     root.finishConnectionTest();
+                if (root.reconnectConsoleId) {
+                    root.sessionAdvice = "";
+                    reconnectTimer.restart();
+                }
             }
         }
 
