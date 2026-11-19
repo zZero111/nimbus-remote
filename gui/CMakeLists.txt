@@ -54,6 +54,13 @@ set(SOURCE_FILES
 	src/qmlsvgprovider.cpp
 	include/systemdinhibit.h
 	src/systemdinhibit.cpp
+	include/appinfo.h
+	include/screenshot.h
+	src/screenshot.cpp
+	include/recorder.h
+	src/recorder.cpp
+	include/netcheck.h
+	src/netcheck.cpp
 	)
 set(RESOURCE_FILES "")
 
@@ -96,7 +103,7 @@ target_include_directories(chiaki PRIVATE include)
 
 add_library(placebo-libav-impl src/libav_impl.c)
 target_link_libraries(placebo-libav-impl PkgConfig::LIBPLACEBO FFMPEG::avcodec FFMPEG::avutil FFMPEG::avformat)
-target_link_libraries(chiaki PkgConfig::LIBPLACEBO placebo-libav-impl)
+target_link_libraries(chiaki PkgConfig::LIBPLACEBO placebo-libav-impl FFMPEG::avformat FFMPEG::avcodec FFMPEG::avutil)
 
 target_link_libraries(chiaki chiaki-lib)
 if(CHIAKI_ENABLE_CLI)

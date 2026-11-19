@@ -11,8 +11,13 @@
 #include <chiaki/time.h>
 #include "../../lib/src/utils.h"
 
+#include <appinfo.h>
+
+#include <QDateTime>
+#include <QDir>
 #include <QKeyEvent>
 #include <QMutexLocker>
+#include <QStandardPaths>
 #include <QtMath>
 #include <atomic>
 
@@ -556,8 +561,12 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 	display_sink.cantdisplay_cb = CantDisplayCb;
 	chiaki_session_ctrl_set_display_sink(&session, &display_sink);
 	chiaki_opus_decoder_set_cb(&opus_decoder, AudioSettingsCb, AudioFrameCb, this);
+	// Audio goes through our own sink first so recordings can copy the Opus packets
+	chiaki_opus_decoder_get_sink(&opus_decoder, &opus_sink);
 	ChiakiAudioSink audio_sink;
-	chiaki_opus_decoder_get_sink(&opus_decoder, &audio_sink);
+	audio_sink.user = this;
+	audio_sink.header_cb = RecordingAudioHeaderCb;
+	audio_sink.frame_cb = RecordingAudioFrameCb;
 	chiaki_session_set_audio_sink(&session, &audio_sink);
 	ChiakiAudioHeader audio_header;
 	chiaki_audio_header_set(&audio_header, 2, 16, MICROPHONE_SAMPLES * 100, MICROPHONE_SAMPLES);
@@ -582,7 +591,7 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 	else
 	{
 #endif
-		chiaki_session_set_video_sample_cb(&session, chiaki_ffmpeg_decoder_video_sample_cb, ffmpeg_decoder);
+		chiaki_session_set_video_sample_cb(&session, RecordingVideoSampleCb, this);
 #if CHIAKI_LIB_ENABLE_PI_DECODER
 	}
 #endif
@@ -732,6 +741,10 @@ StreamSession::~StreamSession()
 	StopSdeckHaptics();
 #endif
 
+	// Finish any recording so the file is complete; nothing is listening for signals any more
+	if(recording_active.exchange(false))
+		recorder.stop();
+
 	// Prepare log for shutdown BEFORE joining session threads
 	// This prevents crashes from log callbacks during shutdown
 	log.PrepareShutdown();
@@ -833,7 +846,97 @@ void StreamSession::Start()
 void StreamSession::Stop()
 {
 	mic_active.storeRelaxed(false);
+	StopRecording();
 	chiaki_session_stop(&session);
+}
+
+bool StreamSession::RecordingVideoSampleCb(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool frame_recovered, void *user)
+{
+	auto self = static_cast<StreamSession *>(user);
+	const auto codec = chiaki_codec_is_h265(self->session.connect_info.video_profile.codec)
+		? StreamRecorder::VideoCodec::H265 : StreamRecorder::VideoCodec::H264;
+	self->recorder.notePossibleParameterSets(buf, buf_size, codec);
+	if(self->recording_active.load(std::memory_order_relaxed))
+		self->recorder.writeVideo(buf, buf_size);
+	return chiaki_ffmpeg_decoder_video_sample_cb(buf, buf_size, frames_lost, frame_recovered, self->ffmpeg_decoder);
+}
+
+void StreamSession::RecordingAudioHeaderCb(ChiakiAudioHeader *header, void *user)
+{
+	auto self = static_cast<StreamSession *>(user);
+	if(header && header->channels)
+		self->audio_channels = header->channels;
+	if(self->opus_sink.header_cb)
+		self->opus_sink.header_cb(header, self->opus_sink.user);
+}
+
+void StreamSession::RecordingAudioFrameCb(uint8_t *buf, size_t buf_size, void *user)
+{
+	auto self = static_cast<StreamSession *>(user);
+	if(self->recording_active.load(std::memory_order_relaxed))
+		self->recorder.writeAudio(buf, buf_size);
+	if(self->opus_sink.frame_cb)
+		self->opus_sink.frame_cb(buf, buf_size, self->opus_sink.user);
+}
+
+void StreamSession::toggleRecording()
+{
+	if(recording_active.load())
+	{
+		StopRecording();
+		return;
+	}
+#if CHIAKI_LIB_ENABLE_PI_DECODER
+	if(pi_decoder)
+	{
+		emit RecordingFailed(tr("Recording isn't supported with the Raspberry Pi decoder"));
+		return;
+	}
+#endif
+	QString base = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+	if(base.isEmpty())
+		base = QDir::homePath();
+	const QString path = QDir(QDir(base).filePath(APP_DISPLAY_NAME)).filePath(
+		QStringLiteral("Recording_%1.ts").arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss")));
+	const auto &profile = session.connect_info.video_profile;
+	const auto codec = chiaki_codec_is_h265(profile.codec) ? StreamRecorder::VideoCodec::H265 : StreamRecorder::VideoCodec::H264;
+	QString error;
+	if(!recorder.start(path, codec, int(profile.width), int(profile.height), audio_channels, 48000, &error))
+	{
+		CHIAKI_LOGE(log.GetChiakiLog(), "Recording failed to start: %s", qPrintable(error));
+		emit RecordingFailed(error);
+		return;
+	}
+	recording_active.store(true);
+	// Ask for a keyframe so the file starts right away instead of at the next natural one
+	chiaki_session_request_idr(&session);
+	if(!recording_timer)
+	{
+		recording_timer = new QTimer(this);
+		recording_timer->setInterval(1000);
+		connect(recording_timer, &QTimer::timeout, this, &StreamSession::RecordingSecondsChanged);
+	}
+	recording_timer->start();
+	CHIAKI_LOGI(log.GetChiakiLog(), "Recording to %s", qPrintable(path));
+	emit RecordingChanged();
+	emit RecordingSecondsChanged();
+}
+
+void StreamSession::StopRecording()
+{
+	if(!recording_active.exchange(false))
+		return;
+	const QString path = recorder.path();
+	const qint64 bytes = recorder.bytesWritten();
+	recorder.stop();
+	if(recording_timer)
+		recording_timer->stop();
+	emit RecordingChanged();
+	emit RecordingSecondsChanged();
+	if(bytes > 0)
+		emit RecordingSaved(path);
+	else
+		emit RecordingFailed(tr("No video was received while recording"));
 }
 
 void StreamSession::GoToBed()
@@ -2812,6 +2915,16 @@ void StreamSession::TriggerFfmpegFrameAvailable()
 	{
 		measured_bitrate = session.stream_connection.measured_bitrate;
 		emit MeasuredBitrateChanged();
+	}
+	// Prefer the console's live RTT; fall back to the one measured while connecting
+	double new_ping = session.stream_connection.console_rtt_ms;
+	// session.c stores exactly 1000 us as a placeholder when the connect-time test fails
+	if(new_ping <= 0.0 && session.rtt_us > 0 && session.rtt_us != 1000)
+		new_ping = session.rtt_us / 1000.0;
+	if(qAbs(new_ping - ping_ms) >= 0.5)
+	{
+		ping_ms = new_ping;
+		emit PingMsChanged();
 	}
 }
 

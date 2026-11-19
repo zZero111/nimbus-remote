@@ -78,6 +78,9 @@ typedef struct chiaki_stream_connection_t
 	char *remote_disconnect_reason;
 
 	double measured_bitrate;
+	/** Latest round-trip time in milliseconds reported by the console's connection-quality
+	 * messages, or 0 if none has arrived yet. */
+	double console_rtt_ms;
 } ChiakiStreamConnection;
 
 CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_init(ChiakiStreamConnection *stream_connection, ChiakiSession *session, double packet_loss_max);

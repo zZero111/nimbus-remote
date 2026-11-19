@@ -31,6 +31,9 @@
 #include "sessionlog.h"
 #include "controllermanager.h"
 #include "settings.h"
+#include "recorder.h"
+
+#include <atomic>
 
 #include <QObject>
 #include <QImage>
@@ -155,15 +158,28 @@ class StreamSession : public QObject
 	Q_PROPERTY(QString host READ GetHost CONSTANT)
 	Q_PROPERTY(bool connected READ GetConnected NOTIFY ConnectedChanged)
 	Q_PROPERTY(double measuredBitrate READ GetMeasuredBitrate NOTIFY MeasuredBitrateChanged)
+	Q_PROPERTY(double pingMs READ GetPingMs NOTIFY PingMsChanged)
 	Q_PROPERTY(double averagePacketLoss READ GetAveragePacketLoss NOTIFY AveragePacketLossChanged)
 	Q_PROPERTY(bool muted READ GetMuted WRITE SetMuted NOTIFY MutedChanged)
 	Q_PROPERTY(bool cantDisplay READ GetCantDisplay NOTIFY CantDisplayChanged)
 	Q_PROPERTY(int framesLost READ GetFramesLost NOTIFY FramesLostChanged)
+	Q_PROPERTY(bool recording READ IsRecording NOTIFY RecordingChanged)
+	Q_PROPERTY(double recordingSeconds READ GetRecordingSeconds NOTIFY RecordingSecondsChanged)
 
 	private:
 		SessionLog log;
 		ChiakiSession session;
 		ChiakiOpusDecoder opus_decoder;
+		// Recording: the console's encoded video/audio are tapped before decoding
+		StreamRecorder recorder;
+		std::atomic<bool> recording_active{false};
+		ChiakiAudioSink opus_sink = {};
+		int audio_channels = 2;
+		QTimer *recording_timer = nullptr;
+		static bool RecordingVideoSampleCb(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool frame_recovered, void *user);
+		static void RecordingAudioHeaderCb(ChiakiAudioHeader *header, void *user);
+		static void RecordingAudioFrameCb(uint8_t *buf, size_t buf_size, void *user);
+		void StopRecording();
 		ChiakiOpusEncoder opus_encoder;
 		bool connected;
 		bool muted;
@@ -179,6 +195,7 @@ class StreamSession : public QObject
 		QString host;
 		int audio_volume;
 		double measured_bitrate = 0;
+		double ping_ms = 0;
 		double average_packet_loss = 0;
 		int32_t frames_lost = 0;
 		int32_t pending_frames_lost = 0;
@@ -343,12 +360,17 @@ class StreamSession : public QObject
 		void Stop();
 		void GoToBed();
 	Q_INVOKABLE bool RequestIDR();
+	/// Starts or stops recording the stream to <Videos>/Nimbus Remote
+	Q_INVOKABLE void toggleRecording();
+	bool IsRecording() const { return recording_active.load(); }
+	double GetRecordingSeconds() const { return recorder.elapsedSeconds(); }
 		void ToggleMute();
 		void SetLoginPIN(const QString &pin);
 		void GoHome();
 		QString GetHost() { return host; }
 		bool GetConnected() { return connected; }
 		double GetMeasuredBitrate()	{ return measured_bitrate; }
+		double GetPingMs()	{ return ping_ms; }
 		double GetAveragePacketLoss()	{ return average_packet_loss; }
 		quint64 DecoderFlushGeneration() const { return decoder_flush_generation.loadRelaxed(); }
 		int GetFramesLost()		{ return frames_lost; }
@@ -393,7 +415,12 @@ class StreamSession : public QObject
 		void AutoRegistSucceeded(const ChiakiRegisteredHost &host);
 		void NicknameReceived(QString nickname);
 		void ConnectedChanged();
+		void RecordingChanged();
+		void RecordingSecondsChanged();
+		void RecordingSaved(const QString &path);
+		void RecordingFailed(const QString &error);
 		void MeasuredBitrateChanged();
+		void PingMsChanged();
 		void AveragePacketLossChanged();
 		void FramesLostChanged();
 		void MutedChanged();

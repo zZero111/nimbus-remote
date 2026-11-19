@@ -38,6 +38,56 @@ int main(int argc, char *argv[]) { return real_main(argc, argv); }
 #endif
 
 #include <QCommandLineParser>
+#include <QSettings>
+#include <appinfo.h>
+
+// First launch only: copy a stock chiaki-ng install's settings (registered consoles,
+// PSN login, controller mappings, profiles) into this app's own settings store.
+// The old settings are only read, never changed.
+static void ImportChiakiNgSettingsOnce()
+{
+	QSettings own(APP_SETTINGS_ORG, APP_SETTINGS_APP);
+	if(own.value("nimbus/imported_from_chiaki_ng", false).toBool() || !own.allKeys().isEmpty())
+	{
+		if(!own.contains("nimbus/imported_from_chiaki_ng"))
+			own.setValue("nimbus/imported_from_chiaki_ng", false);
+		return;
+	}
+	QSettings old_main("Chiaki", "Chiaki");
+	const QStringList old_keys = old_main.allKeys();
+	if(old_keys.isEmpty())
+	{
+		own.setValue("nimbus/imported_from_chiaki_ng", false);
+		return;
+	}
+	auto copy_all = [](QSettings &from, QSettings &to) {
+		for(const QString &key : from.allKeys())
+			to.setValue(key, from.value(key));
+	};
+	copy_all(old_main, own);
+	QSettings old_placebo("Chiaki", "pl_render_params");
+	QSettings own_placebo(APP_SETTINGS_ORG, "pl_render_params");
+	copy_all(old_placebo, own_placebo);
+	// Profiles live in their own stores named "<app>-<profile>"
+	QStringList profiles;
+	const int profile_count = old_main.beginReadArray("profiles");
+	for(int i = 0; i < profile_count; i++)
+	{
+		old_main.setArrayIndex(i);
+		profiles.append(old_main.value("settings/profile_name").toString());
+	}
+	old_main.endArray();
+	for(const QString &profile : profiles)
+	{
+		if(profile.isEmpty())
+			continue;
+		QSettings old_profile("Chiaki", QStringLiteral("Chiaki-%1").arg(profile));
+		QSettings own_profile(APP_SETTINGS_ORG, QStringLiteral("%1-%2").arg(APP_SETTINGS_APP, profile));
+		copy_all(old_profile, own_profile);
+	}
+	own.setValue("nimbus/imported_from_chiaki_ng", true);
+	own.sync();
+}
 #include <QMap>
 #include <QSurfaceFormat>
 
@@ -73,10 +123,10 @@ int real_main(int argc, char *argv[])
 	qRegisterMetaType<ChiakiRegistEventType>();
 	qRegisterMetaType<ChiakiLogLevel>();
 
-	QGuiApplication::setOrganizationName("Chiaki");
-	QGuiApplication::setApplicationName("Chiaki");
+	QGuiApplication::setOrganizationName(APP_SETTINGS_ORG);
+	QGuiApplication::setApplicationName(APP_SETTINGS_APP);
 	QGuiApplication::setApplicationVersion(CHIAKI_VERSION);
-	QGuiApplication::setApplicationDisplayName("chiaki-ng");
+	QGuiApplication::setApplicationDisplayName(APP_DISPLAY_NAME);
 #if defined(Q_OS_MACOS)
 	// Use a plain CAMetalLayer for Vulkan windows. Qt's own layer presents in step with each
 	// live resize, but our swapchain presents from the render thread, so every resize step
@@ -198,13 +248,14 @@ int real_main(int argc, char *argv[])
 	parser.process(app);
 	QStringList args = parser.positionalArguments();
 
+	ImportChiakiNgSettingsOnce();
 	Settings settings(parser.isSet(profile_option) ? parser.value(profile_option) : QString());
 	bool exit_app_on_stream_exit = parser.isSet(stream_exit_option);
 	if(parser.isSet(profile_option))
 		settings.SetCurrentProfile(parser.value(profile_option));
 	Settings alt_settings(parser.isSet(profile_option) ? "" : settings.GetCurrentProfile());
 	if(!settings.GetCurrentProfile().isEmpty())
-		QGuiApplication::setApplicationDisplayName(QString("chiaki-ng:%1").arg(settings.GetCurrentProfile()));
+		QGuiApplication::setApplicationDisplayName(QString(APP_DISPLAY_NAME ":%1").arg(settings.GetCurrentProfile()));
 	bool use_alt_settings = false;
 	if(!parser.isSet(profile_option))
 		use_alt_settings = true;

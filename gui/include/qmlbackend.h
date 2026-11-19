@@ -210,6 +210,8 @@ public:
     Q_INVOKABLE void controllerMappingButtonQuit();
     Q_INVOKABLE void controllerMappingApply();
     Q_INVOKABLE void autoRegister();
+    /// Empty if the PC is on a normal local network, else why consoles can't be discovered
+    Q_INVOKABLE QString localNetworkWarning() const;
 #if CHIAKI_GUI_ENABLE_STEAM_SHORTCUT
     Q_INVOKABLE void createSteamShortcut(QString shortcutName, QString launchOptions, const QJSValue &callback, QString steamDir);
 #endif
@@ -300,6 +302,7 @@ private:
     QHash<int, QmlController*> controllers;
     DisplayServer regist_dialog_server;
     StreamSessionConnectInfo session_info = {};
+    int psn_start_retries = 0; // automatic retries of a timed-out PSN session start, per user action
     SystemdInhibit *sleep_inhibit = {};
 #ifdef Q_OS_MACOS
     MacWakeSleep *mac_wake_sleep = {};
