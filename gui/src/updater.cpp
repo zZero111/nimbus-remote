@@ -2,6 +2,7 @@
 #include "appinfo.h"
 
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -74,8 +75,24 @@ Updater::Updater(QObject *parent)
 	: QObject(parent),
 	net(new QNetworkAccessManager(this))
 {
-	if(!canSelfUpdate())
+	if(!canSelfUpdate() && !canNotifyOnly())
 		state_ = "unsupported";
+}
+
+bool Updater::canNotifyOnly()
+{
+#ifdef Q_OS_MACOS
+	return !qEnvironmentVariableIsSet("NIMBUS_NO_UPDATE");
+#else
+	return false;
+#endif
+}
+
+void Updater::openReleasePage()
+{
+	QDesktopServices::openUrl(QUrl(release_url.isEmpty()
+		? QStringLiteral("https://github.com/%1/releases/latest").arg(APP_UPDATE_REPO)
+		: release_url));
 }
 
 Updater::~Updater()
@@ -131,7 +148,7 @@ void Updater::setState(const QString &s, const QString &err)
 
 void Updater::check()
 {
-	if(state_ == "unsupported" || state_ == "checking" || state_ == "downloading" || state_ == "ready")
+	if(state_ == "unsupported" || state_ == "checking" || state_ == "downloading" || state_ == "ready" || state_ == "available")
 		return;
 	setState("checking");
 	const QUrl url(QStringLiteral("https://api.github.com/repos/%1/releases/latest").arg(APP_UPDATE_REPO));
@@ -151,6 +168,13 @@ void Updater::check()
 		{
 			qCInfo(nimbusUpdate) << "Up to date:" << currentVersion() << "latest" << tag;
 			setState("uptodate");
+			return;
+		}
+		release_url = rel.value("html_url").toString();
+		if(!canSelfUpdate())
+		{
+			qCInfo(nimbusUpdate) << "Update available:" << tag << "- download it from" << release_url;
+			setState("available");
 			return;
 		}
 		QString asset_url;

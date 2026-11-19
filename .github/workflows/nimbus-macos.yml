@@ -1,0 +1,118 @@
+# Builds Nimbus Remote for macOS (Apple Silicon and Intel) and attaches the .dmg files to the
+# GitHub release. Runs automatically when nimbus/release.ps1 publishes a release, or by hand
+# from the Actions tab (then the .dmg files are only kept as workflow artifacts).
+name: Nimbus Remote macOS
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      TAG: ${{ github.event.release.tag_name || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+          submodules: recursive
+
+      - name: Install protobuf
+        run: pip3 install --user 'protobuf>=5,<6' --break-system-packages
+
+      - name: Install brew dependencies
+        run: |
+          brew update
+          brew uninstall pkgconfig || true
+          brew install --force qt@6 ffmpeg pkgconfig opus openssl@3 cmake ninja nasm protobuf@29 speexdsp libplacebo wget python-setuptools json-c miniupnpc libevent
+          # OpenSSL 4 headers in the Homebrew prefix would shadow openssl@3; the bundled curl needs 3
+          brew unlink openssl@4 || true
+
+      - name: Install sdl2-compat
+        run: |
+          sudo INSTALL_PREFIX=/usr/local scripts/build-sdl2-compat.sh
+          sudo cp /usr/local/lib/pkgconfig/sdl2-compat.pc /usr/local/lib/pkgconfig/sdl2.pc
+
+      - name: Configure
+        run: |
+          B="$(brew --prefix)"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCHIAKI_ENABLE_CLI=OFF -DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF \
+            -DOPENSSL_ROOT_DIR="$B/opt/openssl@3" -DOPENSSL_INCLUDE_DIR="$B/opt/openssl@3/include" \
+            -DOPENSSL_CRYPTO_LIBRARY="$B/opt/openssl@3/lib/libcrypto.dylib" -DOPENSSL_SSL_LIBRARY="$B/opt/openssl@3/lib/libssl.dylib" \
+            -DCMAKE_PREFIX_PATH="$B/opt/openssl@3;$B/opt/qt@6;$B/opt/protobuf@29"
+
+      - name: Build
+        run: |
+          export CPATH=$(brew --prefix)/opt/ffmpeg/include
+          cmake --build build --config Release --target chiaki
+
+      - name: Package
+        run: |
+          B="$(brew --prefix)"
+          APP="Nimbus Remote.app"
+          rm -rf "$APP" dmg && mkdir dmg
+          cp -a build/gui/chiaki.app "$APP"
+          cp scripts/qtwebengine_import.qml gui/src/qml/
+          "$B/opt/qt@6/bin/macdeployqt" "$APP" -qmldir="$PWD/gui/src/qml" -libpath="$B/lib"
+          mkdir -p "$APP/Contents/Resources/vulkan/icd.d"
+          wget -q https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-macos.tar && tar xf MoltenVK-macos.tar
+          cp MoltenVK/MoltenVK/dynamic/dylib/macOS/* "$APP/Contents/Resources/vulkan/icd.d"
+          "$B/opt/qt@6/bin/macdeployqt" "$APP" -qmldir="$PWD/gui/src/qml" -libpath="$B/lib"
+          if [[ -d "$APP/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app" ]]; then
+            ln -s ../../../../../../../Frameworks "$APP/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app/Contents"
+          fi
+          M="$APP/Contents/MacOS"
+          cp /usr/local/lib/libSDL3.dylib "$M/libSDL3.dylib"
+          cp /usr/local/lib/libSDL2-2.0.0.dylib "$M/libSDL2-2.0.0.dylib"
+          install_name_tool -id @executable_path/libSDL3.dylib "$M/libSDL3.dylib"
+          install_name_tool -id @executable_path/libSDL2-2.0.0.dylib "$M/libSDL2-2.0.0.dylib"
+          for p in /usr/local/lib @rpath /opt/homebrew/lib; do
+            install_name_tool -change $p/libSDL3.dylib @executable_path/libSDL3.dylib "$M/libSDL2-2.0.0.dylib" || true
+            install_name_tool -change $p/libSDL2-2.0.0.dylib @executable_path/libSDL2-2.0.0.dylib "$M/chiaki" || true
+          done
+          ln -s libvulkan.1.dylib "$APP/Contents/Frameworks/vulkan"
+          codesign --force --entitlements gui/entitlements.xml --deep --sign - "$APP"
+          # Disk image with the app and an Applications shortcut to drag it onto
+          cp -a "$APP" dmg/
+          ln -s /Applications dmg/Applications
+          DMG="NimbusRemote-macos-${{ matrix.arch }}-${TAG#v}.dmg"
+          hdiutil create -volname "Nimbus Remote" -srcfolder dmg -ov -format UDZO "$DMG"
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Check the app starts
+        run: |
+          # Fails the build if a library is missing from the bundle (dyld aborts at launch)
+          "Nimbus Remote.app/Contents/MacOS/chiaki" --help > launch.log 2>&1 & pid=$!
+          sleep 15
+          if kill -0 $pid 2>/dev/null; then kill $pid; echo "App is running"; exit 0; fi
+          wait $pid; code=$?
+          cat launch.log
+          if grep -q "Library not loaded\|dyld" launch.log; then exit 1; fi
+          echo "App exited with $code (no window server on CI), libraries load fine"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DMG }}
+          path: ${{ env.DMG }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$DMG" --clobber --repo "${{ github.repository }}"

@@ -700,7 +700,7 @@ Pane {
     Rectangle {
         id: updateBanner
         readonly property var upd: Chiaki.updater
-        visible: upd && (upd.state === "downloading" || upd.state === "ready")
+        visible: upd && (upd.state === "downloading" || upd.state === "ready" || upd.state === "available")
         anchors {
             right: parent.right
             bottom: versionLabel.top
@@ -720,7 +720,17 @@ Pane {
             Label {
                 text: !updateBanner.upd ? "" : updateBanner.upd.state === "downloading"
                     ? qsTr("Downloading update %1… %2%").arg(updateBanner.upd.latestVersion).arg(Math.round(updateBanner.upd.progress * 100))
+                    : updateBanner.upd.state === "available"
+                    ? qsTr("Update %1 is available").arg(updateBanner.upd.latestVersion)
                     : qsTr("Update %1 ready · installs when you close the app").arg(updateBanner.upd.latestVersion)
+            }
+            Button {
+                visible: updateBanner.upd && updateBanner.upd.state === "available"
+                text: qsTr("Download")
+                highlighted: true
+                focusPolicy: Qt.NoFocus
+                Material.roundedScale: Material.SmallScale
+                onClicked: Chiaki.updater.openReleasePage()
             }
             Button {
                 visible: updateBanner.upd && updateBanner.upd.state === "ready"

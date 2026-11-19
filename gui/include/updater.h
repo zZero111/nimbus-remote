@@ -17,7 +17,9 @@ class QFile;
 class Updater : public QObject
 {
 	Q_OBJECT
-	Q_PROPERTY(QString state READ state NOTIFY changed)            // idle, checking, downloading, ready, error, uptodate, unsupported
+	// idle, checking, downloading, ready, error, uptodate, unsupported, and on macOS (no self-update)
+	// "available": a newer release exists, openReleasePage() takes the user to it
+	Q_PROPERTY(QString state READ state NOTIFY changed)
 	Q_PROPERTY(QString currentVersion READ currentVersion CONSTANT)
 	Q_PROPERTY(QString latestVersion READ latestVersion NOTIFY changed)
 	Q_PROPERTY(double progress READ progress NOTIFY changed)        // 0..1 while downloading
@@ -37,6 +39,8 @@ public:
 	Q_INVOKABLE void check();
 	/// Installs the downloaded update now and quits; the app starts again afterwards.
 	Q_INVOKABLE void installAndRestart();
+	/// Opens the latest release in the browser (macOS: where the new .dmg is).
+	Q_INVOKABLE void openReleasePage();
 	/// Called when the app is closing: installs a downloaded update without restarting.
 	void installOnExitIfReady();
 
@@ -44,6 +48,8 @@ public:
 	static bool isNewer(const QString &a, const QString &b);
 	/// Only portable packaged builds can update themselves (not a build-tree exe).
 	static bool canSelfUpdate();
+	/// macOS: no self-update yet, but tell the user when a newer release is out.
+	static bool canNotifyOnly();
 
 signals:
 	void changed();
@@ -60,6 +66,7 @@ private:
 	QString latest_tag;
 	QString error_;
 	QString zip_path;
+	QString release_url;
 	double progress_ = 0.0;
 	bool installer_launched = false;
 };
