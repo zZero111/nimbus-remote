@@ -176,6 +176,7 @@ class StreamSession : public QObject
 		// Video decoding runs on its own thread (see asyncdecoder.h)
 		std::unique_ptr<AsyncVideoDecoder> async_decoder;
 		std::unique_ptr<WifiStreamingMode> wifi_streaming;
+		QString diag_hw_decoder;
 		// Recording: the console's encoded video/audio are tapped before decoding
 		StreamRecorder recorder;
 		std::atomic<bool> recording_active{false};
@@ -377,6 +378,8 @@ class StreamSession : public QObject
 		bool GetConnected() { return connected; }
 		double GetMeasuredBitrate()	{ return measured_bitrate; }
 		double GetPingMs()	{ return ping_ms; }
+		/// Plain-text summary of this session for "Copy diagnostics" (no addresses or account data).
+		QString DiagnosticsSummary();
 		double GetAveragePacketLoss()	{ return average_packet_loss; }
 		quint64 DecoderFlushGeneration() const { return decoder_flush_generation.loadRelaxed(); }
 		int GetFramesLost()		{ return frames_lost; }

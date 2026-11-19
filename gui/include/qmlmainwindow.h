@@ -132,6 +132,14 @@ public:
     bool amdCard() const;
     bool nvidiaCard() const;
     bool intelIntegratedCard() const { return intel_integrated_card; }
+    /// GPU name and driver for diagnostics ("OpenGL renderer" when Vulkan isn't in use).
+    QString gpuDescription() const
+    {
+        if (render_backend == RenderBackend::Vulkan && vk_device_props.deviceName[0])
+            return QStringLiteral("%1 (driver %2)").arg(QString::fromUtf8(vk_device_props.deviceName),
+                                                        QString::fromUtf8(vk_device_driver_props.driverInfo));
+        return QStringLiteral("OpenGL renderer");
+    }
     bool wasMaximized() const { return was_maximized; };
     bool isWindowAdjustable() const { return is_window_adjustable; }
     void setWindowAdjustable(bool adjustable) { is_window_adjustable = adjustable; }

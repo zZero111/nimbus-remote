@@ -9,6 +9,8 @@
 #ifndef WIFISTREAMING_H
 #define WIFISTREAMING_H
 
+#include <QString>
+
 class WifiStreamingMode
 {
 public:
@@ -19,6 +21,10 @@ public:
 
 	/// Number of connected Wi-Fi adapters the settings were applied to.
 	int adapters() const { return adapters_; }
+
+	/// The connected Wi-Fi link in one line (band, signal, link speed, standard) for diagnostics,
+	/// or "not connected". Leaves out the network name.
+	static QString linkSummary();
 
 private:
 	void *handle_ = nullptr;

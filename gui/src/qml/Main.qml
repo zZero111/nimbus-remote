@@ -4,6 +4,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
+import "presets.js" as Presets
 
 Item {
     id: root
@@ -522,7 +523,9 @@ Item {
     // Connection-quality tracking for the current session, turned into advice when it ends
     property string sessionAdvice: ""
     property var lastConsole: null
-    property var sessionQuality: ({ samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0 })
+    property var sessionQuality: ({ samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0, bitrateSum: 0, dropped: 0 })
+    // Plain-text numbers from the last session, included in "Copy diagnostics"
+    property string lastSessionStats: ""
 
     Timer {
         id: sessionQualitySampler
@@ -536,18 +539,183 @@ Item {
                 q.samples++;
                 q.lossSum += loss;
                 q.lossMax = Math.max(q.lossMax, loss);
+                q.bitrateSum += Chiaki.session.measuredBitrate;
             }
             const ping = Chiaki.session.pingMs;
             if (ping > 0) {
                 q.pingSum += ping;
                 q.pingSamples++;
             }
+            q.dropped = Chiaki.window.droppedFrames;
         }
     }
 
+    function copyDiagnostics() {
+        if (Chiaki.copyDiagnostics(root.lastSessionStats))
+            root.showToast(qsTr("Diagnostics copied. Paste them into a message."));
+    }
+
+    // Short message at the bottom of the screen
+    function showToast(text) {
+        homeToastLabel.text = text;
+        homeToast.opacity = 1;
+        homeToastTimer.restart();
+    }
+    Rectangle {
+        id: homeToast
+        z: 1000
+        anchors {
+            horizontalCenter: parent.horizontalCenter
+            bottom: parent.bottom
+            bottomMargin: 110
+        }
+        radius: 20
+        color: Qt.rgba(0.05, 0.07, 0.11, 0.94)
+        border.color: Qt.rgba(1, 1, 1, 0.2)
+        implicitWidth: homeToastLabel.implicitWidth + 40
+        implicitHeight: homeToastLabel.implicitHeight + 20
+        opacity: 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+        Label {
+            id: homeToastLabel
+            anchors.centerIn: parent
+            font.pixelSize: 15
+        }
+        Timer {
+            id: homeToastTimer
+            interval: 3500
+            onTriggered: homeToast.opacity = 0
+        }
+    }
+
+    // ---- Connection test: a short stream at Quality settings, measured, then a recommendation ----
+    readonly property int connectionTestSeconds: 12
+    // null when no test runs; otherwise { host, saved, samples, lossSum, lossMax, pingSum, pingSamples,
+    // bitrateSum, droppedStart, droppedEnd, framesLostStart, framesLostEnd, done }
+    property var connectionTest: null
+
+    readonly property var presetSettingKeys: ["resolutionLocalPS5", "fpsLocalPS5", "bitrateLocalPS5", "codecLocalPS5",
+        "resolutionRemotePS5", "fpsRemotePS5", "bitrateRemotePS5", "codecRemotePS5"]
+
+    function startConnectionTest(host, index) {
+        if (Chiaki.session || connectionTest)
+            return;
+        let saved = {};
+        for (const k of presetSettingKeys)
+            saved[k] = Chiaki.settings[k];
+        // Test at the heaviest preset: if that streams cleanly, everything lighter will too
+        Presets.apply(Chiaki.settings, Presets.byKey("quality"));
+        connectionTest = { host: host, saved: saved, samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0,
+            bitrateSum: 0, droppedStart: -1, droppedEnd: 0, framesLostStart: -1, framesLostEnd: 0, done: false };
+        lastConsole = host;
+        if (host.discovered)
+            Chiaki.connectToHost(index, host.name);
+        else
+            Chiaki.connectToHost(index);
+    }
+
+    function restoreAfterConnectionTest() {
+        const t = connectionTest;
+        if (!t)
+            return;
+        for (const k in t.saved)
+            Chiaki.settings[k] = t.saved[k];
+    }
+
+    Timer {
+        id: connectionTestSampler
+        interval: 500
+        repeat: true
+        running: !!root.connectionTest && !root.connectionTest.done && !!Chiaki.session && Chiaki.session.connected && Chiaki.window.hasVideo
+        onTriggered: {
+            const t = root.connectionTest;
+            if (t.droppedStart < 0) {
+                t.droppedStart = Chiaki.window.droppedFrames;
+                t.framesLostStart = Chiaki.session.framesLost;
+            }
+            t.samples++;
+            const loss = Chiaki.session.averagePacketLoss;
+            if (isFinite(loss)) {
+                t.lossSum += loss;
+                t.lossMax = Math.max(t.lossMax, loss);
+            }
+            t.bitrateSum += Chiaki.session.measuredBitrate;
+            if (Chiaki.session.pingMs > 0) {
+                t.pingSum += Chiaki.session.pingMs;
+                t.pingSamples++;
+            }
+            t.droppedEnd = Chiaki.window.droppedFrames;
+            t.framesLostEnd = Chiaki.session.framesLost;
+            root.connectionTestProgress = t.samples / (root.connectionTestSeconds * 2);
+            if (t.samples >= root.connectionTestSeconds * 2) {
+                t.done = true;
+                // End the stream without putting the console to sleep
+                Chiaki.stopSession(false);
+            }
+        }
+    }
+    property real connectionTestProgress: 0
+
+    function finishConnectionTest() {
+        const t = connectionTest;
+        connectionTest = null;
+        connectionTestProgress = 0;
+        if (!t)
+            return;
+        for (const k in t.saved)
+            Chiaki.settings[k] = t.saved[k];
+        if (!t.done || t.samples < 6) {
+            showConfirmDialog(qsTr("Connection test"),
+                qsTr("The test stopped before it could measure enough. Make sure the console is on and try again."),
+                () => {});
+            return;
+        }
+        const seconds = t.samples / 2;
+        const loss = t.lossSum / t.samples;
+        const ping = t.pingSamples ? t.pingSum / t.pingSamples : 0;
+        const bitrate = t.bitrateSum / t.samples;
+        const dropped = Math.max(0, t.droppedEnd - t.droppedStart) + Math.max(0, t.framesLostEnd - t.framesLostStart);
+        const droppedPerSec = dropped / seconds;
+
+        let key, why;
+        if (loss < 0.005 && t.lossMax < 0.03 && droppedPerSec < 0.3 && (ping === 0 || ping < 40)) {
+            key = "quality";
+            why = qsTr("The connection kept up with the heaviest stream.");
+        } else if (loss < 0.02 && droppedPerSec < 1.5 && (ping === 0 || ping < 70)) {
+            key = "balanced";
+            why = qsTr("The heaviest stream lost a little data; Balanced leaves headroom.");
+        } else {
+            key = "performance";
+            why = qsTr("The connection struggled with the heaviest stream; Performance keeps it smooth.");
+        }
+        const preset = Presets.byKey(key);
+        const name = t.host.name || qsTr("this console");
+        const numbers = qsTr("Ping %1 · packet loss %2% (worst %3%) · %4 Mbps · %5 dropped frames in %6 s")
+            .arg(ping > 0 ? ping.toFixed(0) + " ms" : qsTr("n/a"))
+            .arg((loss * 100).toFixed(1)).arg((t.lossMax * 100).toFixed(1))
+            .arg(bitrate.toFixed(1)).arg(dropped).arg(seconds.toFixed(0));
+        lastSessionStats = qsTr("Connection test: %1, recommended %2").arg(numbers).arg(preset.name);
+        showConfirmDialog(qsTr("Connection test: %1 recommended").arg(qsTr(preset.name)),
+            numbers + "\n\n" + why + "\n\n" + qsTr("Use %1 for %2?").arg(qsTr(preset.name)).arg(name),
+            () => { root.connectionTestApplied(t.host, key); });
+    }
+    // MainView stores the per-console preset
+    signal connectionTestApplied(var host, string key)
+
     function finishSessionQuality() {
         const q = sessionQuality;
-        sessionQuality = { samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0 };
+        sessionQuality = { samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0, bitrateSum: 0, dropped: 0 };
+        if (q.samples > 0 && !connectionTest) {
+            lastSessionStats = qsTr("Measured over %1 s: average packet loss %2% (worst %3%), average ping %4 ms, average bitrate %5 Mbps, dropped frames %6")
+                .arg(q.samples * 2)
+                .arg((q.lossSum / q.samples * 100).toFixed(1)).arg((q.lossMax * 100).toFixed(1))
+                .arg(q.pingSamples ? (q.pingSum / q.pingSamples).toFixed(0) : "n/a")
+                .arg((q.bitrateSum / q.samples).toFixed(1)).arg(q.dropped);
+        }
+        // A connection test reports on its own
+        if (connectionTest)
+            return;
         // Need ~20 s of data before judging
         if (q.samples < 10)
             return;
@@ -573,6 +741,8 @@ Item {
                 root.showStreamView();
             } else {
                 root.finishSessionQuality();
+                if (root.connectionTest)
+                    root.finishConnectionTest();
             }
         }
 

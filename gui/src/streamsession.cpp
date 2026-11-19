@@ -423,6 +423,7 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		ffmpeg_decoder = new ChiakiFfmpegDecoder;
 		ChiakiLogSniffer sniffer;
 		chiaki_log_sniffer_init(&sniffer, CHIAKI_LOG_ALL, GetChiakiLog());
+		diag_hw_decoder = connect_info.hw_decoder.isEmpty() ? QStringLiteral("software") : connect_info.hw_decoder;
 		err = chiaki_ffmpeg_decoder_init(ffmpeg_decoder,
 				chiaki_log_sniffer_get_log(&sniffer),
 				chiaki_target_is_ps5(connect_info.target) ? connect_info.video_profile.codec : CHIAKI_CODEC_H264,
@@ -2960,6 +2961,30 @@ void StreamSession::TriggerFfmpegFrameAvailable()
 		ping_ms = new_ping;
 		emit PingMsChanged();
 	}
+}
+
+QString StreamSession::DiagnosticsSummary()
+{
+	QStringList out;
+	const ChiakiConnectVideoProfile &p = session.connect_info.video_profile;
+	out << QStringLiteral("Stream: %1x%2 @ %3 fps, %4 kbps requested, %5")
+		.arg(p.width).arg(p.height).arg(p.max_fps).arg(p.bitrate).arg(QString::fromUtf8(chiaki_codec_name(p.codec)));
+	out << QStringLiteral("Decoder: %1").arg(diag_hw_decoder.isEmpty() ? QStringLiteral("unknown") : diag_hw_decoder);
+	if(connect_timer.isValid())
+		out << QStringLiteral("Session length: %1 s").arg(connect_timer.elapsed() / 1000);
+	out << QStringLiteral("At end: %1 Mbps, ping %2 ms, packet loss %3%, frames lost %4")
+		.arg(GetMeasuredBitrate(), 0, 'f', 1).arg(GetPingMs(), 0, 'f', 0)
+		.arg(GetAveragePacketLoss() * 100.0, 0, 'f', 1).arg(GetFramesLost());
+	if(async_decoder)
+	{
+		const auto st = async_decoder->stats();
+		out << QStringLiteral("Decode thread: %1 decoded, %2 skipped, %3 overflows, %4 errors (%5 recoveries), %6 bursts, deepest backlog %7")
+			.arg(st.decoded).arg(st.skipped).arg(st.overflows).arg(st.decode_errors)
+			.arg(st.error_recoveries).arg(st.bursts).arg(st.max_backlog);
+	}
+	out << QStringLiteral("Wi-Fi streaming mode: %1").arg(wifi_streaming && wifi_streaming->adapters() > 0
+		? QStringLiteral("on (%1 adapter)").arg(wifi_streaming->adapters()) : QStringLiteral("not used"));
+	return out.join('\n');
 }
 
 bool StreamSession::RequestIDR()

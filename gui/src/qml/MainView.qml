@@ -97,7 +97,18 @@ Pane {
             delete m[Presets.consoleId(host)];
         consolePresetStore.map = JSON.stringify(m);
     }
+    // A finished connection test's recommendation becomes this console's preset
+    Connections {
+        target: root
+        function onConnectionTestApplied(host, key) {
+            consolePane.setConsolePresetKey(host, key);
+        }
+    }
+
+    // A connection test that never reached a stream (console off, PSN failed): put settings back
     StackView.onActivated: {
+        if (root.connectionTest && !Chiaki.session)
+            root.finishConnectionTest();
         forceActiveFocus(Qt.TabFocusReason);
         if(!Chiaki.autoConnect && !root.initialAsk && !Chiaki.window.directStream)
         {
@@ -290,6 +301,11 @@ Pane {
                 tip: qsTr("Create Steam shortcut (L3 / F1)")
                 visible: typeof Chiaki.createSteamShortcut === "function"
                 onClicked: root.showSteamShortcutDialog(false)
+            }
+            CornerIcon {
+                icon.source: "qrc:/icons/copy-24px.svg"
+                tip: qsTr("Copy diagnostics to paste into a message (no addresses or account details)")
+                onClicked: root.copyDiagnostics()
             }
             CornerIcon {
                 id: settingsButton
@@ -490,6 +506,10 @@ Pane {
                 root.showConsolePinDialog(index);
             }
 
+            function testConnection() {
+                root.startConnectionTest(modelData, index);
+            }
+
             // The tile
             Rectangle {
                 id: tile
@@ -661,6 +681,42 @@ Pane {
                 tip: qsTr("Wake up")
                 onClicked: consolePane.current.wakeUpHost()
             }
+            // Pill button: runs a short stream and recommends a quality preset
+            Rectangle {
+                id: testButton
+                visible: !!(consolePane.current && consolePane.current.host.registered)
+                implicitHeight: 64
+                implicitWidth: testRow.implicitWidth + 40
+                radius: 32
+                color: testArea.containsMouse ? Qt.rgba(1, 1, 1, 0.24) : Qt.rgba(1, 1, 1, 0.14)
+                Behavior on color { ColorAnimation { duration: 120 } }
+                RowLayout {
+                    id: testRow
+                    anchors.centerIn: parent
+                    spacing: 8
+                    Image {
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        sourceSize: Qt.size(44, 44)
+                        source: "qrc:/icons/stats-24px.svg"
+                    }
+                    Label {
+                        text: qsTr("Test connection")
+                        font.pixelSize: 16
+                        font.weight: Font.DemiBold
+                    }
+                }
+                MouseArea {
+                    id: testArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (consolePane.current) consolePane.current.testConnection()
+                }
+                ToolTip.visible: testArea.containsMouse
+                ToolTip.delay: 400
+                ToolTip.text: qsTr("Streams for %1 seconds at the highest quality, measures ping, packet loss and dropped frames, then recommends a setting for this console").arg(root.connectionTestSeconds)
+            }
             RoundAction {
                 visible: !!(consolePane.current && consolePane.current.host.registered)
                 text: "PIN"
@@ -721,6 +777,70 @@ Pane {
                         ToolTip.visible: qArea.containsMouse
                         ToolTip.delay: 450
                         ToolTip.text: q.modelData.key ? qsTr(q.modelData.hint) : q.modelData.hint
+                    }
+                }
+            }
+        }
+
+        // Motion: Smooth paces frames by their timestamps (with vsync) so Wi-Fi jitter doesn't show
+        // as hitches, at about one frame of extra delay; Lowest latency shows each frame the moment
+        // it's decoded. Switching restarts the app, because the renderer is set up at start.
+        RowLayout {
+            Layout.topMargin: 12
+            spacing: 14
+            readonly property bool smooth: !Chiaki.settings.directFrameMapping
+            Label {
+                text: qsTr("Motion (all consoles)")
+                font.pixelSize: 14
+                color: consolePane.textFaint
+            }
+            Row {
+                id: motionRow
+                spacing: 8
+                Repeater {
+                    model: [
+                        { smooth: true, name: qsTr("Smooth"), hint: qsTr("Even motion on Wi-Fi. Adds about one frame (~16 ms) of delay. Best for driving, open-world and story games.") },
+                        { smooth: false, name: qsTr("Lowest latency"), hint: qsTr("Shows every frame immediately. Best for shooters and fighting games on a good connection.") }
+                    ]
+                    delegate: Rectangle {
+                        id: m
+                        required property var modelData
+                        readonly property bool active: motionRow.parent.smooth === modelData.smooth
+                        radius: height / 2
+                        height: 40
+                        width: mLabel.implicitWidth + 30
+                        color: active ? "white" : (mArea.containsMouse ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.08))
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Label {
+                            id: mLabel
+                            anchors.centerIn: parent
+                            text: m.modelData.name
+                            font.pixelSize: 14
+                            font.weight: m.active ? Font.DemiBold : Font.Normal
+                            color: m.active ? "#0b0f17" : consolePane.textDim
+                        }
+                        MouseArea {
+                            id: mArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (m.active)
+                                    return;
+                                const smooth = m.modelData.smooth;
+                                root.showConfirmDialog(qsTr("Switch to %1?").arg(m.modelData.name),
+                                    m.modelData.hint + "\n\n" + qsTr("Nimbus Remote restarts to apply this."),
+                                    () => {
+                                        Chiaki.settings.directFrameMapping = !smooth;
+                                        Chiaki.settings.vSyncEnabled = smooth;
+                                        if (Chiaki.settings.restartApplication())
+                                            Qt.quit();
+                                    });
+                            }
+                        }
+                        ToolTip.visible: mArea.containsMouse
+                        ToolTip.delay: 450
+                        ToolTip.text: m.modelData.hint
                     }
                 }
             }
@@ -954,8 +1074,20 @@ Pane {
             Label {
                 id: versionLabel
                 text: Chiaki.updater ? Chiaki.updater.currentVersion : Qt.application.version
-                color: consolePane.textFaint
+                color: diagArea.containsMouse ? "white" : consolePane.textFaint
                 font.pixelSize: 12
+                font.underline: diagArea.containsMouse
+                MouseArea {
+                    id: diagArea
+                    anchors.fill: parent
+                    anchors.margins: -6
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.copyDiagnostics()
+                }
+                ToolTip.visible: diagArea.containsMouse
+                ToolTip.delay: 300
+                ToolTip.text: qsTr("Click to copy diagnostics (no addresses or account details)")
             }
         }
     }

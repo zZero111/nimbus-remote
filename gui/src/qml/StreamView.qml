@@ -369,6 +369,53 @@ Item {
         }
     }
 
+    // Connection test in progress: what's happening and how long is left
+    Rectangle {
+        visible: !!root.connectionTest
+        anchors {
+            horizontalCenter: parent.horizontalCenter
+            top: parent.top
+            topMargin: 28
+        }
+        radius: 22
+        implicitWidth: testColumn.implicitWidth + 48
+        implicitHeight: testColumn.implicitHeight + 24
+        color: Qt.rgba(0.03, 0.05, 0.10, 0.88)
+        border.color: Qt.rgba(1, 1, 1, 0.2)
+        ColumnLayout {
+            id: testColumn
+            anchors.centerIn: parent
+            spacing: 8
+            Label {
+                Layout.alignment: Qt.AlignHCenter
+                text: !Chiaki.window.hasVideo ? qsTr("Connection test: connecting…")
+                    : qsTr("Testing connection… %1 s left").arg(Math.max(0, Math.ceil(root.connectionTestSeconds * (1 - root.connectionTestProgress))))
+                font.pixelSize: 17
+                font.weight: Font.DemiBold
+            }
+            Rectangle {
+                Layout.alignment: Qt.AlignHCenter
+                implicitWidth: 300
+                implicitHeight: 6
+                radius: 3
+                color: Qt.rgba(1, 1, 1, 0.15)
+                Rectangle {
+                    width: parent.width * root.connectionTestProgress
+                    height: parent.height
+                    radius: 3
+                    color: "white"
+                    Behavior on width { NumberAnimation { duration: 450 } }
+                }
+            }
+            Label {
+                Layout.alignment: Qt.AlignHCenter
+                text: qsTr("Streaming at the highest quality. Moving around in a game gives the most accurate result.")
+                font.pixelSize: 13
+                color: Qt.rgba(1, 1, 1, 0.6)
+            }
+        }
+    }
+
     // Connection warning: a small pill saying what's wrong, instead of a flashing icon.
     // Stays up for a few seconds after the loss settles so it doesn't flicker.
     Rectangle {

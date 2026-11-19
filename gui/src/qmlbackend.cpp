@@ -34,6 +34,10 @@
 #include <QDesktopServices>
 #include <QtConcurrent>
 #include <QTimer>
+#include <QClipboard>
+#include <QSysInfo>
+#include "appinfo.h"
+#include "wifistreaming.h"
 
 extern "C" {
 #include <chiaki/time.h>
@@ -1219,6 +1223,10 @@ void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
             emit sessionError(tr("Session has quit"), m);
         }
 
+        // Keep a summary for "Copy diagnostics" before the session goes away
+        last_session_summary = session_for_connections->DiagnosticsSummary()
+            + QStringLiteral("\nEnded: %1").arg(QString::fromUtf8(chiaki_quit_reason_string(reason)));
+
         chiaki_log_mutex.lock();
         chiaki_log_ctx = nullptr;
         chiaki_log_mutex.unlock();
@@ -1475,6 +1483,51 @@ bool QmlBackend::registerHost(const QString &host, const QString &psn_id, const 
             settings->SetManualHost(manual_host);
         }
     });
+    return true;
+}
+
+QString QmlBackend::diagnostics(const QString &session_stats) const
+{
+    QStringList out;
+    out << QStringLiteral("Nimbus Remote %1 diagnostics").arg(QStringLiteral(APP_RELEASE_TAG));
+    out << QStringLiteral("System: %1, Qt %2, UI scale %3")
+        .arg(QSysInfo::prettyProductName(), QString::fromLatin1(qVersion()),
+             qEnvironmentVariableIsSet("QT_SCALE_FACTOR") ? qEnvironmentVariable("QT_SCALE_FACTOR") : QStringLiteral("1"));
+    if (window)
+        out << QStringLiteral("GPU: %1").arg(window->gpuDescription());
+
+    out << QString();
+    out << QStringLiteral("[Settings]");
+    out << QStringLiteral("Renderer: %1, decoder setting: %2, render preset: %3, motion: %4, vsync: %5")
+        .arg(settings->GetRenderBackend() == RenderBackend::Vulkan ? QStringLiteral("Vulkan") : QStringLiteral("OpenGL"))
+        .arg(settings->GetHardwareDecoder().isEmpty() ? QStringLiteral("auto") : settings->GetHardwareDecoder())
+        .arg(QStringList({QStringLiteral("Fast"), QStringLiteral("Default"), QStringLiteral("High Quality"), QStringLiteral("HQ + Spatial"), QStringLiteral("HQ + Adv. Spatial"), QStringLiteral("Custom")}).value(static_cast<int>(settings->GetPlaceboPreset()), QStringLiteral("?")))
+        .arg(settings->GetDirectFrameMapping() ? QStringLiteral("lowest latency") : QStringLiteral("smooth"))
+        .arg(settings->GetVSyncEnabled() ? QStringLiteral("on") : QStringLiteral("off"));
+
+    out << QString();
+    out << QStringLiteral("[Network]");
+    const QString warn = NetCheck::localNetworkWarning();
+    out << QStringLiteral("Local network: %1").arg(warn.isEmpty() ? QStringLiteral("ok") : warn);
+    out << QStringLiteral("Wi-Fi: %1").arg(WifiStreamingMode::linkSummary());
+
+    out << QString();
+    out << QStringLiteral("[Last session]");
+    if (last_session_summary.isEmpty() && session_stats.isEmpty())
+        out << QStringLiteral("No session yet since the app started");
+    if (!session_stats.isEmpty())
+        out << session_stats;
+    if (!last_session_summary.isEmpty())
+        out << last_session_summary;
+    return out.join('\n');
+}
+
+bool QmlBackend::copyDiagnostics(const QString &session_stats)
+{
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard)
+        return false;
+    clipboard->setText(diagnostics(session_stats));
     return true;
 }
 

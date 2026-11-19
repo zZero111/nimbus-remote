@@ -214,6 +214,11 @@ public:
     Q_INVOKABLE void autoRegister();
     /// Empty if the PC is on a normal local network, else why consoles can't be discovered
     Q_INVOKABLE QString localNetworkWarning() const;
+    /// Short report for troubleshooting: version, GPU, key settings, Wi-Fi link, last session.
+    /// Contains no addresses, console IDs or account data. `session_stats` comes from the UI.
+    Q_INVOKABLE QString diagnostics(const QString &session_stats) const;
+    /// Puts diagnostics() on the clipboard.
+    Q_INVOKABLE bool copyDiagnostics(const QString &session_stats);
     Updater *updater() const { return updater_; }
 #if CHIAKI_GUI_ENABLE_STEAM_SHORTCUT
     Q_INVOKABLE void createSteamShortcut(QString shortcutName, QString launchOptions, const QJSValue &callback, QString steamDir);
@@ -307,6 +312,7 @@ private:
     StreamSessionConnectInfo session_info = {};
     int psn_start_retries = 0; // automatic retries of a timed-out PSN session start, per user action
     Updater *updater_ = nullptr;
+    QString last_session_summary;
     SystemdInhibit *sleep_inhibit = {};
 #ifdef Q_OS_MACOS
     MacWakeSleep *mac_wake_sleep = {};
