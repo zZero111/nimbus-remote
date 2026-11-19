@@ -52,10 +52,12 @@ jobs:
           KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -n "$KS_B64" ]; then
-            # Secrets set from Windows PowerShell carry a trailing CR/LF; strip it
-            printf %s "$KS_B64" | tr -d '\r\n ' | base64 -d > "$RUNNER_TEMP/nimbus.jks"
-            PW=$(printf %s "$KS_PW" | tr -d '\r\n')
-            ALIAS=$(printf %s "${KS_ALIAS:-nimbus}" | tr -d '\r\n ')
+            # Secrets set from Windows PowerShell can carry line endings, a byte-order mark or
+            # UTF-16 padding; keep only the characters each value can contain
+            printf %s "$KS_B64" | tr -cd 'A-Za-z0-9+/=' | base64 -d > "$RUNNER_TEMP/nimbus.jks"
+            PW=$(printf %s "$KS_PW" | tr -cd 'A-Za-z0-9')
+            ALIAS=$(printf %s "${KS_ALIAS:-nimbus}" | tr -cd 'A-Za-z0-9_-')
+            echo "keystore $(stat -c %s "$RUNNER_TEMP/nimbus.jks") bytes, password ${#PW} chars, alias ${#ALIAS} chars"
             {
               echo "chiakiKeystore=$RUNNER_TEMP/nimbus.jks"
               echo "chiakiKeystorePW=$PW"
