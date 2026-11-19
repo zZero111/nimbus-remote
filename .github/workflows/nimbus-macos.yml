@@ -1,4 +1,4 @@
-# Builds Nimbus Remote for macOS (Apple Silicon and Intel) and attaches the .dmg files to the
+# Builds Nimbus Remote for macOS (Apple Silicon, macOS 15+) and attaches the .dmg files to the
 # GitHub release. Runs automatically when nimbus/release.ps1 publishes a release, or by hand
 # from the Actions tab (then the .dmg files are only kept as workflow artifacts).
 name: Nimbus Remote macOS
@@ -19,8 +19,8 @@ jobs:
         include:
           - runner: macos-15
             arch: arm64
-          - runner: macos-15-intel
-            arch: x64
+          # Intel Macs left out for now: Homebrew's libraries target macOS 15, and the Intel Macs
+          # people still have (2017-2019) often stop at macOS 12, so it needs its own dependency build
     name: macOS ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     env:
