@@ -31,7 +31,10 @@ $text = [regex]::Replace($text, '#define APP_RELEASE_TAG "[^"]*"', "#define APP_
 [IO.File]::WriteAllText($appinfo, $text)
 
 # 2. Build and package (the running app's files would be locked)
-Get-Process chiaki -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$parent\*" } | Stop-Process
+# Close gracefully first: killing it while Vulkan starts makes the next launch fall back to OpenGL
+$running = Get-Process chiaki -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$parent\*" }
+$running | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+$running | ForEach-Object { if (-not $_.WaitForExit(10000)) { $_ | Stop-Process -Force } }
 $env:MSYSTEM = 'MINGW64'; $env:CHERE_INVOKING = '1'
 $msysSrc = '/' + $src.Substring(0, 1).ToLower() + ($src.Substring(2) -replace '\\', '/')
 & C:\msys64\usr\bin\bash.exe -lc "cd '$msysSrc' && bash nimbus/build.sh && bash nimbus/deploy.sh"

@@ -369,27 +369,49 @@ Item {
         }
     }
 
-    RoundButton {
+    // Connection warning: a small pill saying what's wrong, instead of a flashing icon.
+    // Stays up for a few seconds after the loss settles so it doesn't flicker.
+    Rectangle {
+        id: connectionWarning
+        readonly property real loss: (Chiaki.session && isFinite(Chiaki.session.averagePacketLoss)) ? Chiaki.session.averagePacketLoss : 0
+        readonly property bool bad: !!Chiaki.session && loss > (Chiaki.settings.wifiDroppedNotif * 0.01)
         anchors {
             right: parent.right
             top: parent.top
-            margins: 40
+            margins: 24
         }
-        icon.source: "qrc:/icons/discover-off-24px.svg"
-        icon.width: 50
-        icon.height: 50
-        padding: 20
-        checked: true
-        opacity: networkIndicatorTimer.running ? 0.7 : 0.0
-        visible: opacity
-        Material.background: Material.accent
+        radius: 16
+        implicitHeight: 32
+        implicitWidth: warnRow.implicitWidth + 26
+        color: Qt.rgba(0.06, 0.07, 0.10, 0.78)
+        border.color: Qt.rgba(0.94, 0.66, 0.18, 0.7)
+        border.width: 1
+        opacity: networkIndicatorTimer.running ? 1.0 : 0.0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 300 } }
+        onBadChanged: if (bad) networkIndicatorTimer.restart()
 
-        Behavior on opacity { NumberAnimation { duration: 400 } }
+        RowLayout {
+            id: warnRow
+            anchors.centerIn: parent
+            spacing: 8
+            Rectangle {
+                width: 8
+                height: 8
+                radius: 4
+                color: "#f0a92e"
+            }
+            Label {
+                text: qsTr("Unstable connection · %1% packet loss").arg((connectionWarning.loss * 100).toFixed(1))
+                font.pixelSize: 13
+                color: "#ffe0a8"
+            }
+        }
 
         Timer {
             id: networkIndicatorTimer
-            running: Chiaki.session?.averagePacketLoss > (Chiaki.settings.wifiDroppedNotif * 0.01)
-            interval: 400
+            interval: 3000
+            onTriggered: if (connectionWarning.bad) restart()
         }
     }
 
@@ -578,8 +600,8 @@ Item {
                     let ctx = getContext("2d");
                     let gradient = ctx.createLinearGradient(0, 0, 0, height);
                     gradient.addColorStop(0.0, Qt.rgba(0.0, 0.0, 0.0, 0.0));
-                    gradient.addColorStop(0.7, Qt.rgba(0.5, 0.5, 0.5, 0.7));
-                    gradient.addColorStop(1.0, Qt.rgba(0.5, 0.5, 0.5, 0.9));
+                    gradient.addColorStop(0.55, Qt.rgba(0.04, 0.05, 0.08, 0.55));
+                    gradient.addColorStop(1.0, Qt.rgba(0.04, 0.05, 0.08, 0.92));
                     ctx.fillStyle = gradient;
                     ctx.fillRect(0, 0, width, height);
                 }

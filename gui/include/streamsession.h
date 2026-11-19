@@ -33,6 +33,7 @@
 #include "settings.h"
 #include "recorder.h"
 #include "asyncdecoder.h"
+#include "wifistreaming.h"
 
 #include <atomic>
 #include <memory>
@@ -174,6 +175,7 @@ class StreamSession : public QObject
 		ChiakiOpusDecoder opus_decoder;
 		// Video decoding runs on its own thread (see asyncdecoder.h)
 		std::unique_ptr<AsyncVideoDecoder> async_decoder;
+		std::unique_ptr<WifiStreamingMode> wifi_streaming;
 		// Recording: the console's encoded video/audio are tapped before decoding
 		StreamRecorder recorder;
 		std::atomic<bool> recording_active{false};

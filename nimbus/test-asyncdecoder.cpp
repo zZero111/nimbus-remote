@@ -54,7 +54,7 @@ int main()
 					r.accounted += 1 + lost;
 					return true;
 				},
-				[&] { requests++; }, isKey, 4);
+				[&] { requests++; }, isKey);
 			for(uint32_t i = 0; i < 200; i++)
 			{
 				auto s = sample(i % 60 == 0 ? 'K' : 'P', i);
@@ -70,6 +70,64 @@ int main()
 			if(r.seqs[i] != i) ordered = false;
 		check(ordered && r.seqs.size() == 200, "fast decoder: decoded in order");
 		check(requests == 0, "fast decoder: no keyframe requests");
+	}
+
+	// 1b. Wi-Fi burst: 8 frames arrive at once after a stall. They are all decoded (no skipping,
+	// no keyframe request), because each later frame needs the earlier ones
+	{
+		Recorder r;
+		std::atomic<int> requests{0};
+		AsyncVideoDecoder::Stats st;
+		{
+			AsyncVideoDecoder::Options o;
+			o.max_pending = 30;
+			AsyncVideoDecoder d(
+				[&](const uint8_t *b, size_t, int32_t lost, bool) {
+					std::this_thread::sleep_for(milliseconds(3)); // hardware decode time
+					std::lock_guard<std::mutex> l(r.m);
+					r.seqs.push_back(seqOf(b));
+					r.accounted += 1 + lost;
+					return true;
+				},
+				[&] { requests++; }, isKey, o);
+			uint32_t seq = 0;
+			for(int round = 0; round < 5; round++)
+			{
+				for(int i = 0; i < 8; i++, seq++)
+				{
+					auto s = sample(seq == 0 ? 'K' : 'P', seq);
+					d.push(s.data(), s.size(), 0, false);
+				}
+				std::this_thread::sleep_for(milliseconds(120)); // stall, then the next burst
+			}
+			st = d.stats();
+		}
+		check(st.decoded == 40 && st.skipped == 0, "wi-fi bursts: all 40 frames decoded, none skipped");
+		check(requests == 0 && st.overflows == 0, "wi-fi bursts: no keyframe request, no overflow");
+		check(st.bursts >= 5 && st.max_backlog >= 3, "wi-fi bursts: bursts detected and absorbed");
+	}
+
+	// 1c. A single decode error does not throw away the following frames
+	{
+		Recorder r;
+		std::atomic<int> requests{0};
+		{
+			AsyncVideoDecoder d(
+				[&](const uint8_t *b, size_t, int32_t, bool) {
+					std::lock_guard<std::mutex> l(r.m);
+					r.seqs.push_back(seqOf(b));
+					return seqOf(b) != 5;
+				},
+				[&] { requests++; }, isKey);
+			for(uint32_t i = 0; i < 20; i++)
+			{
+				auto s = sample(i == 0 ? 'K' : 'P', i);
+				d.push(s.data(), s.size(), 0, false);
+				std::this_thread::sleep_for(milliseconds(5));
+			}
+			std::this_thread::sleep_for(milliseconds(50));
+		}
+		check(requests == 0 && r.seqs.size() == 20, "isolated decode error: keeps decoding, no keyframe request");
 	}
 
 	// 2. Slow decoder: network thread never blocks, backlog is dropped, recovery at keyframe
@@ -89,7 +147,7 @@ int main()
 					r.accounted += 1 + lost;
 					return true;
 				},
-				[&] { requests++; }, isKey, 4);
+				[&] { requests++; }, isKey, [] { AsyncVideoDecoder::Options o; o.max_pending = 4; o.keyframe_retry = milliseconds(0); return o; }());
 			for(uint32_t i = 0; i < total; i++)
 			{
 				// keyframe every 30 samples, plus the final sample so everything is accounted for
@@ -120,7 +178,7 @@ int main()
 		check(st.decoded + st.skipped == total, "slow decoder: decoded + skipped == pushed");
 	}
 
-	// 3. Decode error: later frames are skipped until the next keyframe
+	// 3. Repeated decode errors: later frames are skipped until the next keyframe
 	{
 		Recorder r;
 		std::atomic<int> requests{0};
@@ -131,9 +189,9 @@ int main()
 					r.seqs.push_back(seqOf(b));
 					r.types.push_back(char(b[0]));
 					r.accounted += 1 + lost;
-					return seqOf(b) != 5; // sample 5 fails to decode
+					return seqOf(b) < 3 || seqOf(b) > 5; // samples 3, 4 and 5 fail to decode
 				},
-				[&] { requests++; }, isKey, 4);
+				[&] { requests++; }, isKey);
 			for(uint32_t i = 0; i < 20; i++)
 			{
 				auto s = sample(i == 0 || i == 12 ? 'K' : 'P', i);
@@ -145,9 +203,9 @@ int main()
 		bool skipped_6_to_11 = true;
 		for(uint32_t s : r.seqs)
 			if(s >= 6 && s <= 11) skipped_6_to_11 = false;
-		check(requests == 1, "decode error: one keyframe request");
-		check(skipped_6_to_11, "decode error: frames 6-11 skipped until keyframe 12");
-		check(!r.seqs.empty() && r.seqs.back() == 19, "decode error: decoding resumes after the keyframe");
+		check(requests == 1, "repeated decode errors: one keyframe request (rate-limited)");
+		check(skipped_6_to_11, "repeated decode errors: frames 6-11 skipped until keyframe 12");
+		check(!r.seqs.empty() && r.seqs.back() == 19, "repeated decode errors: decoding resumes after the keyframe");
 	}
 
 	// 4. stop() with a backlog returns promptly and stops decoding
@@ -157,7 +215,7 @@ int main()
 		{
 			AsyncVideoDecoder d(
 				[&](const uint8_t *, size_t, int32_t, bool) { std::this_thread::sleep_for(milliseconds(20)); decoded++; return true; },
-				[] {}, isKey, 100);
+				[] {}, isKey, [] { AsyncVideoDecoder::Options o; o.max_pending = 100; return o; }());
 			for(uint32_t i = 0; i < 50; i++)
 			{
 				auto s = sample('P', i);

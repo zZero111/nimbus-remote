@@ -132,25 +132,38 @@ public:
         panel->setObjectName(QStringLiteral("statsPanel"));
         panel->setStyleSheet(QStringLiteral(
             "#statsPanel {"
-            "  background: rgba(0, 0, 0, 140);"
-            "  border-radius: 10px;"
+            "  background: rgba(10, 13, 20, 200);"
+            "  border: 1px solid rgba(255, 255, 255, 28);"
+            "  border-radius: 14px;"
             "}"
-            "QLabel { color: white; }"));
+            "QLabel { color: rgba(255, 255, 255, 170); background: transparent; }"));
         panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Minimum);
 
         auto *panelLayout = new QVBoxLayout(panel);
-        panelLayout->setContentsMargins(14, 12, 14, 12);
-        panelLayout->setSpacing(8);
+        panelLayout->setContentsMargins(18, 14, 18, 14);
+        panelLayout->setSpacing(7);
+
+        // Headline: one word for how the connection is doing right now
+        qualityLabel = new QLabel(panel);
+        QFont qualityFont;
+        qualityFont.setPixelSize(16);
+        qualityFont.setBold(true);
+        qualityLabel->setFont(qualityFont);
+        panelLayout->addWidget(qualityLabel);
+        auto *divider = new QFrame(panel);
+        divider->setFixedHeight(1);
+        divider->setStyleSheet(QStringLiteral("background: rgba(255, 255, 255, 30); border: none;"));
+        panelLayout->addWidget(divider);
 
         auto makeRow = [panelLayout](const QString &title, const QColor &valueColor, QFont titleFont, QFont valueFont, QLabel *&valueLabel) {
             auto *row = new QWidget(panelLayout->parentWidget());
             auto *rowLayout = new QHBoxLayout(row);
             rowLayout->setContentsMargins(0, 0, 0, 0);
-            rowLayout->setSpacing(8);
+            rowLayout->setSpacing(18);
             auto *titleLabel = new QLabel(title, row);
             titleLabel->setFont(titleFont);
-            titleLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            titleLabel->setMinimumWidth(110);
+            titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            titleLabel->setMinimumWidth(120);
             auto *value = new QLabel(row);
             value->setFont(valueFont);
             value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -164,17 +177,18 @@ public:
         };
 
         QFont titleFont;
-        titleFont.setPixelSize(15);
+        titleFont.setPixelSize(14);
         QFont valueFont;
-        valueFont.setPixelSize(18);
+        valueFont.setPixelSize(16);
         valueFont.setBold(true);
 
-        bitrateRow = makeRow(tr("Mbps"), QColor(QStringLiteral("#00a7ff")), titleFont, valueFont, bitrateValue);
-        queueRow = makeRow(tr("queue depth avg"), QColor(QStringLiteral("#90caf9")), titleFont, valueFont, queueDepthValue);
-        pendingRow = makeRow(tr("pending frame age"), QColor(QStringLiteral("#90caf9")), titleFont, valueFont, pendingAgeValue);
-        packetLossRow = makeRow(tr("packet loss"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, packetLossValue);
-        droppedFramesRow = makeRow(tr("dropped frames"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, droppedFramesValue);
-        lostFramesRow = makeRow(tr("lost frames"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, lostFramesValue);
+        bitrateRow = makeRow(tr("Bitrate"), QColor(QStringLiteral("#4fc3ff")), titleFont, valueFont, bitrateValue);
+        pingRow = makeRow(tr("Ping"), QColor(QStringLiteral("#a5d6a7")), titleFont, valueFont, pingValue);
+        packetLossRow = makeRow(tr("Packet loss"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, packetLossValue);
+        droppedFramesRow = makeRow(tr("Dropped frames"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, droppedFramesValue);
+        lostFramesRow = makeRow(tr("Lost frames"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, lostFramesValue);
+        queueRow = makeRow(tr("Render queue"), QColor(QStringLiteral("#90caf9")), titleFont, valueFont, queueDepthValue);
+        pendingRow = makeRow(tr("Frame age"), QColor(QStringLiteral("#90caf9")), titleFont, valueFont, pendingAgeValue);
 
         outer->addWidget(panel, 0, Qt::AlignRight | Qt::AlignVCenter);
 
@@ -238,6 +252,7 @@ public:
             connect(current_session, &StreamSession::AveragePacketLossChanged, this, &StatsOverlayWidget::refresh);
             connect(current_session, &StreamSession::FramesLostChanged, this, &StatsOverlayWidget::refresh);
             connect(current_session, &StreamSession::ConnectedChanged, this, &StatsOverlayWidget::refresh);
+            connect(current_session, &StreamSession::PingMsChanged, this, &StatsOverlayWidget::refresh);
         }
     }
 
@@ -248,9 +263,40 @@ public:
 
         bitrateRow->setVisible(hasSession);
         if (hasSession)
-            bitrateValue->setText(QString::number(session->GetMeasuredBitrate(), 'f', 1));
+            bitrateValue->setText(tr("%1 Mbps").arg(session->GetMeasuredBitrate(), 0, 'f', 1));
         else
             bitrateValue->clear();
+
+        const double ping = hasSession ? session->GetPingMs() : 0.0;
+        const double loss = hasSession ? session->GetAveragePacketLoss() : 0.0;
+        pingRow->setVisible(hasSession && ping > 0.0);
+        if (ping > 0.0) {
+            // green < 30 ms, amber < 80 ms, red above
+            const char *ping_color = ping < 30.0 ? "#a5d6a7" : (ping < 80.0 ? "#ffe082" : "#ef9a9a");
+            pingValue->setStyleSheet(QStringLiteral("color: %1;").arg(QLatin1String(ping_color)));
+            pingValue->setText(tr("%1 ms").arg(ping, 0, 'f', 0));
+        }
+
+        qualityLabel->setVisible(hasSession);
+        if (hasSession) {
+            QString word;
+            const char *color;
+            if (loss < 0.01 && (ping <= 0.0 || ping < 40.0)) {
+                word = tr("Excellent connection");
+                color = "#69f0ae";
+            } else if (loss < 0.03 && (ping <= 0.0 || ping < 70.0)) {
+                word = tr("Good connection");
+                color = "#a5d6a7";
+            } else if (loss < 0.08 && (ping <= 0.0 || ping < 120.0)) {
+                word = tr("Fair connection");
+                color = "#ffe082";
+            } else {
+                word = tr("Poor connection");
+                color = "#ef9a9a";
+            }
+            qualityLabel->setText(QStringLiteral("● ") + word);
+            qualityLabel->setStyleSheet(QStringLiteral("color: %1;").arg(QLatin1String(color)));
+        }
 
         queueRow->setVisible(true);
         queueDepthValue->setText(QString::number(owner ? owner->queueDepthAverage() : 0.0, 'f', 1));
@@ -280,6 +326,9 @@ private:
     QPointer<QmlMainWindow> owner;
     QPointer<QmlBackend> backend;
     QPointer<StreamSession> current_session;
+    QLabel *qualityLabel = nullptr;
+    QWidget *pingRow = nullptr;
+    QLabel *pingValue = nullptr;
     QWidget *bitrateRow = nullptr;
     QWidget *queueRow = nullptr;
     QWidget *pendingRow = nullptr;
@@ -4959,7 +5008,7 @@ void QmlMainWindow::init(Settings *settings, bool exit_app_on_stream_exit)
             // The last launch closed before Vulkan showed a frame, which is how a crash inside the
             // Vulkan driver or a third-party Vulkan layer looks; keep OpenGL until switched back
             settings->SetRenderBackend(RenderBackend::OpenGL);
-            fallbackToOpenGL(tr("chiaki-ng closed while starting Vulkan last time, so it now uses OpenGL. "
+            fallbackToOpenGL(tr("Nimbus Remote closed while starting Vulkan last time, so it now uses OpenGL. "
                                 "You can switch back under Settings > Video > Renderer Backend."));
             goto renderer_backend_ready;
         }

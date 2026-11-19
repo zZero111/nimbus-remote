@@ -11,6 +11,35 @@ Pane {
     padding: 0
     id: consolePane
 
+    // Visual tokens for the home screen
+    readonly property color accent: Material.accent
+    readonly property color surface: Qt.rgba(1, 1, 1, 0.045)
+    readonly property color surfaceHover: Qt.rgba(1, 1, 1, 0.075)
+    readonly property color hairline: Qt.rgba(1, 1, 1, 0.09)
+    readonly property color textDim: Qt.rgba(1, 1, 1, 0.62)
+    readonly property color textFaint: Qt.rgba(1, 1, 1, 0.40)
+
+    background: Rectangle {
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#121826" }
+            GradientStop { position: 0.55; color: "#0d1119" }
+            GradientStop { position: 1.0; color: "#090b10" }
+        }
+        // Faint accent wash along the top
+        Rectangle {
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: parent.top
+            }
+            height: 260
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.rgba(0, 0.65, 1, 0.08) }
+                GradientStop { position: 1.0; color: "transparent" }
+            }
+        }
+    }
+
     // Per-console stream preset, saved in this app's settings as JSON {consoleId: presetKey}
     Settings {
         id: consolePresetStore
@@ -41,7 +70,7 @@ Pane {
         {
             root.initialAsk = true;
             if(Chiaki.settings.addSteamShortcutAsk && (typeof Chiaki.createSteamShortcut === "function"))
-                root.showRemindDialog(qsTr("Official Steam artwork + controller layout"), qsTr("Would you like to either create a new non-Steam game for chiaki-ng\nor update an existing non-Steam game with the official artwork and controller layout?") + "\n\n" + qsTr("(Note: If you select no now and want to do this later, click the button or press R3 from the main menu.)"), false, () => root.showSteamShortcutDialog(true));
+                root.showRemindDialog(qsTr("Official Steam artwork + controller layout"), qsTr("Would you like to either create a new non-Steam game for Nimbus Remote\nor update an existing non-Steam game with the official artwork and controller layout?") + "\n\n" + qsTr("(Note: If you select no now and want to do this later, click the button or press R3 from the main menu.)"), false, () => root.showSteamShortcutDialog(true));
             else if(Chiaki.settings.remotePlayAsk)
             {
                 if(!Chiaki.settings.psnRefreshToken || !Chiaki.settings.psnAuthToken || !Chiaki.settings.psnAuthTokenExpiry || !Chiaki.settings.psnAccountId)
@@ -95,124 +124,175 @@ Pane {
         }
     }
 
-    ToolBar {
+    // Round icon button with a tooltip, used in the header
+    component HeaderIconButton: RoundButton {
+        id: hib
+        property string tip
+        property string hint // controller/keyboard shortcut shown in the tooltip
+        flat: true
+        focusPolicy: Qt.NoFocus
+        implicitWidth: 52
+        implicitHeight: 52
+        icon.width: 24
+        icon.height: 24
+        icon.color: hovered ? "white" : Qt.rgba(1, 1, 1, 0.78)
+        ToolTip.visible: hovered && tip.length > 0
+        ToolTip.delay: 350
+        ToolTip.text: hint ? tip + "  (" + hint + ")" : tip
+    }
+
+    // Small text action under a console's main button; shows its controller button when selected
+    component SecondaryAction: Button {
+        id: sa
+        property string buttonIcon
+        property bool showIcon: false
+        flat: true
+        focusPolicy: Qt.NoFocus
+        font.pixelSize: 13
+        leftPadding: showIcon && buttonIcon ? 34 : 12
+        rightPadding: 12
+        Material.roundedScale: Material.SmallScale
+        Material.foreground: consolePane.textDim
+        Image {
+            anchors {
+                left: parent.left
+                leftMargin: 8
+                verticalCenter: parent.verticalCenter
+            }
+            width: 20
+            height: 20
+            sourceSize: Qt.size(width, height)
+            source: sa.buttonIcon
+            visible: sa.showIcon && !!sa.buttonIcon
+        }
+    }
+
+    // Header: brand on the left, actions on the right
+    Item {
         id: toolBar
         anchors {
             top: parent.top
             left: parent.left
             right: parent.right
         }
-        height: 80
+        height: 84
 
         RowLayout {
             anchors {
                 fill: parent
-                leftMargin: 10
-                rightMargin: 10
+                leftMargin: 32
+                rightMargin: 20
             }
+            spacing: 6
 
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 100
-                flat: true
-                text: "×"
-                font.pixelSize: 60
-                focusPolicy: Qt.NoFocus
-                onClicked: Qt.quit()
-                Material.roundedScale: Material.SmallScale
+            // App mark: play symbol on an accent tile
+            Rectangle {
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 44
+                radius: 12
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: "#18b4ff" }
+                    GradientStop { position: 1.0; color: "#0062c4" }
+                }
+                Image {
+                    anchors.centerIn: parent
+                    anchors.horizontalCenterOffset: 2
+                    width: 26
+                    height: 26
+                    sourceSize: Qt.size(52, 52)
+                    source: "qrc:/icons/play-24px.svg"
+                }
+            }
+            ColumnLayout {
+                Layout.leftMargin: 10
+                spacing: 0
+                Label {
+                    text: "Nimbus Remote"
+                    font.pixelSize: 22
+                    font.bold: true
+                    font.letterSpacing: 0.3
+                }
+                Label {
+                    text: qsTr("PlayStation Remote Play")
+                    font.pixelSize: 12
+                    color: consolePane.textFaint
+                    font.letterSpacing: 1.2
+                }
             }
 
             Item { Layout.fillWidth: true }
 
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 350
-                flat: true
-                text: "Create Steam Shortcut"
-                focusPolicy: Qt.NoFocus
-                onClicked: root.showSteamShortcutDialog(false)
-                Material.roundedScale: Material.SmallScale
-                visible: typeof Chiaki.createSteamShortcut === "function"
-                Image {
-                    anchors {
-                        right: parent.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 12
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l3.svg"
-                }
+            HeaderIconButton {
+                icon.source: "qrc:/icons/refresh-24px.svg"
+                tip: qsTr("Refresh consoles on your PSN account")
+                hint: "R1"
+                visible: !!Chiaki.settings.psnAuthToken
+                onClicked: Chiaki.refreshPsnToken()
             }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 400
-                flat: true
-                text: "Refresh PSN Hosts"
-                icon.source: "qrc:/icons/r1.svg"
-                focusPolicy: Qt.NoFocus
-                onClicked: Chiaki.refreshPsnToken();
-                Material.roundedScale: Material.SmallScale
-                visible: Chiaki.settings.psnAuthToken
-            }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 400
-                flat: true
-                focusPolicy: Qt.NoFocus
-                Material.roundedScale: Material.SmallScale
-                visible: !Chiaki.settings.psnAuthToken
-            }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 300
-                flat: true
-                text: "Add Manual Host"
-                focusPolicy: Qt.NoFocus
+            HeaderIconButton {
+                icon.source: "qrc:/icons/add-24px.svg"
+                tip: qsTr("Add a console by IP address")
+                hint: "R3 / F2"
                 onClicked: root.showManualHostDialog()
-                Material.roundedScale: Material.SmallScale
-                Image {
-                    anchors {
-                        left: parent.left
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 12
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r3.svg"
-                }
             }
-
-            Button {
+            HeaderIconButton {
+                icon.source: "qrc:/icons/gamepad-24px.svg"
+                tip: qsTr("Create Steam shortcut")
+                hint: "L3 / F1"
+                visible: typeof Chiaki.createSteamShortcut === "function"
+                onClicked: root.showSteamShortcutDialog(false)
+            }
+            HeaderIconButton {
                 id: settingsButton
-                Layout.fillHeight: true
-                Layout.preferredWidth: 100
-                flat: true
-                icon.source: "qrc:/icons/settings-20px.svg";
-                icon.width: 50
-                icon.height: 50
-                focusPolicy: Qt.NoFocus
+                icon.source: "qrc:/icons/settings-20px.svg"
+                tip: qsTr("Settings")
+                hint: "Options"
                 onClicked: root.showSettingsDialog()
-                Material.roundedScale: Material.SmallScale
+            }
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.preferredHeight: 28
+                Layout.leftMargin: 6
+                Layout.rightMargin: 6
+                color: consolePane.hairline
+            }
+            HeaderIconButton {
+                icon.source: "qrc:/icons/close-24px.svg"
+                tip: qsTr("Quit")
+                onClicked: Qt.quit()
             }
         }
+    }
+
+    Label {
+        id: sectionTitle
+        visible: !consolePane.noConsoles
+        anchors {
+            top: toolBar.bottom
+            topMargin: 8
+            left: hostsView.left
+            leftMargin: 4
+        }
+        text: qsTr("YOUR CONSOLES")
+        font.pixelSize: 12
+        font.bold: true
+        font.letterSpacing: 2
+        color: consolePane.textFaint
     }
 
     ListView {
         id: hostsView
         keyNavigationWraps: true
+        readonly property real contentMaxWidth: 1180
         anchors {
-            top: toolBar.bottom
-            left: parent.left
-            right: parent.right
-            bottom: parent.bottom
-            bottomMargin: 50
+            top: sectionTitle.bottom
+            topMargin: 12
+            bottom: statusBar.top
+            bottomMargin: 8
+            horizontalCenter: parent.horizontalCenter
         }
+        width: Math.min(parent.width - 48, contentMaxWidth)
+        spacing: 14
         clip: true
         model: Chiaki.hosts
         onCountChanged: {
@@ -249,16 +329,18 @@ Pane {
         delegate: ItemDelegate {
             visible: modelData.display
             id: delegate
-            width: parent ? parent.width : 0
-            height: modelData.display ? 180 : 0
+            width: ListView.view ? ListView.view.width : 0
+            height: modelData.display ? 196 : 0
             highlighted: ListView.isCurrentItem
+            padding: 0
             onClicked: connectToHost()
 
-            // What the console is doing, shown as a coloured pill
+            readonly property var host: modelData
+            // What the console is doing
             readonly property bool viaPsn: !!modelData.duid && !modelData.discovered
             readonly property string statusLabel: {
                 if (viaPsn)
-                    return qsTr("Internet");
+                    return qsTr("Available over the internet");
                 if (!modelData.discovered)
                     return qsTr("Not found");
                 if (modelData.state === "ready")
@@ -269,14 +351,14 @@ Pane {
             }
             readonly property color statusColor: {
                 if (viaPsn)
-                    return "#3d6fd6";
+                    return "#5b8cff";
                 if (!modelData.discovered)
-                    return "#5a5a5a";
+                    return "#7a7f8a";
                 if (modelData.state === "ready")
-                    return "#1e9e57";
+                    return "#2ecc71";
                 if (modelData.state === "standby")
-                    return "#c98a12";
-                return "#5a5a5a";
+                    return "#f0a92e";
+                return "#7a7f8a";
             }
             readonly property string connectionLabel: {
                 if (modelData.duid) {
@@ -298,20 +380,15 @@ Pane {
                     return qsTr("Wake & Play");
                 return qsTr("Play");
             }
+            readonly property bool isPlay: primaryActionLabel === qsTr("Play") || primaryActionLabel === qsTr("Wake & Play")
 
             background: Rectangle {
-                anchors {
-                    fill: parent
-                    leftMargin: 16
-                    rightMargin: 16
-                    topMargin: 8
-                    bottomMargin: 8
-                }
-                radius: 14
-                color: delegate.highlighted ? Qt.rgba(1, 1, 1, 0.10) : (delegate.hovered ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(1, 1, 1, 0.035))
-                border.width: delegate.highlighted ? 2 : 0
-                border.color: Material.accent
-                Behavior on color { ColorAnimation { duration: 120 } }
+                radius: 18
+                color: delegate.highlighted ? Qt.rgba(1, 1, 1, 0.07) : (delegate.hovered ? consolePane.surfaceHover : consolePane.surface)
+                border.width: delegate.highlighted ? 2 : 1
+                border.color: delegate.highlighted ? consolePane.accent : consolePane.hairline
+                Behavior on color { ColorAnimation { duration: 140 } }
+                Behavior on border.color { ColorAnimation { duration: 140 } }
             }
 
             function connectToHost() {
@@ -336,106 +413,168 @@ Pane {
             function deleteHost() {
                 if (modelData.manual)
                     root.showConfirmDialog(qsTr("Delete Console"), qsTr("Are you sure you want to delete this console?"), () => {Chiaki.deleteHost(index)});
-                        
                 else if (modelData.discovered && !modelData.registered)
                     root.showConfirmDialog(qsTr("Hide Console"), qsTr("Are you sure you want to hide this console?") + "\n\n" + qsTr("Note: You can unhide from the Consoles section of the Settings under Hidden Consoles"), () => Chiaki.hideHost(modelData.mac, modelData.name));
-
             }
 
             function setConsolePin() {
                 root.showConsolePinDialog(index);
             }
 
-            RowLayout {
-                anchors {
-                    fill: parent
-                    leftMargin: 44
-                    rightMargin: 34
-                    topMargin: 18
-                    bottomMargin: 18
-                }
-                spacing: 36
+            contentItem: RowLayout {
+                spacing: 28
 
-                Image {
+                // Console art on a tinted panel that glows in the status colour
+                Rectangle {
                     Layout.fillHeight: true
-                    Layout.preferredWidth: 150
-                    fillMode: Image.PreserveAspectFit
-                    source: "image://svg/console-ps" + (modelData.ps5 ? "5" : "4") + (modelData.state == "standby" ? "#light_standby" : "#light_on")
-                    sourceSize: Qt.size(width, height)
+                    Layout.preferredWidth: 236
+                    Layout.margins: 12
+                    radius: 12
+                    clip: true
+                    // Light backdrop so the (dark) console artwork stands out
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "#3a4560" }
+                        GradientStop { position: 1.0; color: "#232a3a" }
+                    }
+                    Rectangle {
+                        anchors {
+                            left: parent.left
+                            right: parent.right
+                            bottom: parent.bottom
+                        }
+                        height: 3
+                        color: delegate.statusColor
+                        opacity: 0.85
+                    }
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 18
+                        fillMode: Image.PreserveAspectFit
+                        source: "image://svg/console-ps" + (modelData.ps5 ? "5" : "4") + (modelData.state == "standby" ? "#light_standby" : "#light_on")
+                        sourceSize: Qt.size(width, height)
+                    }
+                    Label {
+                        anchors {
+                            left: parent.left
+                            top: parent.top
+                            margins: 10
+                        }
+                        text: modelData.ps5 ? "PS5" : "PS4"
+                        font.pixelSize: 11
+                        font.bold: true
+                        font.letterSpacing: 1.5
+                        color: consolePane.textFaint
+                    }
                 }
 
                 ColumnLayout {
-                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
-                    spacing: 6
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.fillWidth: true
+                    spacing: 8
 
                     Label {
                         text: modelData.name || qsTr("Console")
-                        font.pixelSize: 26
+                        font.pixelSize: 28
                         font.bold: true
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
                     }
 
                     RowLayout {
-                        spacing: 10
-                        // Status pill: what the console is doing right now
+                        spacing: 8
                         Rectangle {
-                            radius: height / 2
-                            implicitHeight: 28
-                            implicitWidth: statusText.implicitWidth + 28
+                            width: 10
+                            height: 10
+                            radius: 5
                             color: delegate.statusColor
-                            Label {
-                                id: statusText
-                                anchors.centerIn: parent
-                                text: delegate.statusLabel
-                                color: "white"
-                                font.pixelSize: 14
-                                font.bold: true
+                            // Gentle pulse while the console is reachable
+                            SequentialAnimation on opacity {
+                                running: delegate.statusLabel !== qsTr("Not found")
+                                loops: Animation.Infinite
+                                NumberAnimation { from: 1.0; to: 0.45; duration: 1100; easing.type: Easing.InOutSine }
+                                NumberAnimation { from: 0.45; to: 1.0; duration: 1100; easing.type: Easing.InOutSine }
                             }
                         }
                         Label {
-                            text: delegate.connectionLabel
-                            opacity: 0.7
+                            text: delegate.statusLabel
+                            color: delegate.statusColor
                             font.pixelSize: 15
+                            font.bold: true
                         }
-
-                        // Per-console preset chip: click cycles Default → Performance → Balanced → Quality
-                        Rectangle {
-                            visible: !!modelData.registered
-                            readonly property string key: {
-                                consolePresetStore.map; // re-evaluate when the store changes
-                                return consolePane.consolePresetKey(modelData);
-                            }
-                            readonly property var preset: Presets.byKey(key)
-                            radius: height / 2
-                            implicitHeight: 28
-                            implicitWidth: chipText.implicitWidth + 24
-                            color: chipArea.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.08)
-                            border.width: 1
-                            border.color: preset ? Material.accent : Qt.rgba(1, 1, 1, 0.2)
-                            Label {
-                                id: chipText
-                                anchors.centerIn: parent
-                                text: parent.preset ? qsTr("Preset: %1").arg(qsTr(parent.preset.name)) : qsTr("Preset: current")
-                                font.pixelSize: 13
-                            }
-                            MouseArea {
-                                id: chipArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: consolePane.setConsolePresetKey(modelData, Presets.nextKey(parent.key))
-                            }
-                            ToolTip.visible: chipArea.containsMouse
-                            ToolTip.delay: 400
-                            ToolTip.text: qsTr("Stream preset used for this console. Click to change.")
+                        Label {
+                            text: "·  " + delegate.connectionLabel
+                            color: consolePane.textDim
+                            font.pixelSize: 15
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
                         }
                     }
 
                     Label {
                         visible: !!(modelData.discovered && modelData.app)
-                        text: qsTr("Playing: %1").arg(modelData.app || "")
-                        font.pixelSize: 17
+                        text: qsTr("Playing %1").arg(modelData.app || "")
+                        font.pixelSize: 16
                         elide: Text.ElideRight
-                        Layout.maximumWidth: 520
+                        Layout.fillWidth: true
+                    }
+
+                    // Per-console stream preset: Auto uses the global setting below
+                    RowLayout {
+                        visible: !!modelData.registered
+                        Layout.topMargin: 6
+                        spacing: 10
+                        readonly property string key: {
+                            consolePresetStore.map; // re-evaluate when the store changes
+                            return consolePane.consolePresetKey(modelData);
+                        }
+                        Label {
+                            text: qsTr("Stream")
+                            color: consolePane.textFaint
+                            font.pixelSize: 13
+                        }
+                        Rectangle {
+                            id: segTrack
+                            radius: 10
+                            color: Qt.rgba(0, 0, 0, 0.30)
+                            border.color: consolePane.hairline
+                            implicitHeight: 32
+                            implicitWidth: segRow.implicitWidth + 6
+                            Row {
+                                id: segRow
+                                anchors.centerIn: parent
+                                spacing: 2
+                                Repeater {
+                                    model: [{ key: "", name: qsTr("Auto"), hint: qsTr("Use the quality selected at the bottom of the screen") }].concat(Presets.list)
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        readonly property bool active: segTrack.parent.key === modelData.key
+                                        radius: 8
+                                        height: 26
+                                        width: segLabel.implicitWidth + 22
+                                        color: active ? consolePane.accent : (segArea.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Label {
+                                            id: segLabel
+                                            anchors.centerIn: parent
+                                            text: parent.modelData.key ? qsTr(parent.modelData.name) : parent.modelData.name
+                                            font.pixelSize: 13
+                                            font.bold: parent.active
+                                            color: parent.active ? "#05131c" : consolePane.textDim
+                                        }
+                                        MouseArea {
+                                            id: segArea
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: consolePane.setConsolePresetKey(delegate.host, parent.modelData.key)
+                                        }
+                                        ToolTip.visible: segArea.containsMouse
+                                        ToolTip.delay: 450
+                                        ToolTip.text: parent.modelData.key ? qsTr(parent.modelData.hint) : parent.modelData.hint
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     Label {
@@ -448,206 +587,85 @@ Pane {
                             return parts.join("  ·  ");
                         }
                         visible: text.length > 0
-                        opacity: 0.45
-                        font.pixelSize: 13
+                        color: consolePane.textFaint
+                        font.pixelSize: 12
                     }
                 }
 
-                Item { Layout.fillWidth: true }
-
-                // Primary action, triggered by click / Enter / Cross
-                Rectangle {
-                    Layout.alignment: Qt.AlignVCenter
-                    radius: 8
-                    implicitHeight: 56
-                    implicitWidth: primaryText.implicitWidth + (delegate.highlighted ? 84 : 48)
-                    color: delegate.highlighted ? Material.accent : Qt.rgba(1, 1, 1, 0.08)
-                    Image {
-                        anchors {
-                            left: parent.left
-                            leftMargin: 14
-                            verticalCenter: parent.verticalCenter
-                        }
-                        width: 28
-                        height: 28
-                        sourceSize: Qt.size(width, height)
-                        source: root.controllerButton("cross")
-                        visible: delegate.highlighted
-                    }
-                    Label {
-                        id: primaryText
-                        anchors {
-                            verticalCenter: parent.verticalCenter
-                            horizontalCenter: parent.horizontalCenter
-                            horizontalCenterOffset: delegate.highlighted ? 18 : 0
-                        }
-                        text: delegate.primaryActionLabel
-                        font.pixelSize: 18
-                        font.bold: true
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: delegate.connectToHost()
-                    }
-                }
-
+                // Actions: big primary button, small secondary links under it
                 ColumnLayout {
-                    Layout.fillHeight: true
-                    spacing: 0
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.rightMargin: 28
+                    spacing: 8
 
-                    Button {
-                        Layout.alignment: Qt.AlignCenter
-                        text: modelData.manual ? qsTr("Delete") : qsTr("Hide")
-                        flat: true
-                        padding: 20
-                        leftPadding: delegate.highlighted ? 50 : undefined
-                        focusPolicy: Qt.NoFocus
-                        visible: modelData.manual || (modelData.discovered && !modelData.registered)
-                        onClicked: delegate.deleteHost()
-                        Material.roundedScale: Material.SmallScale
-
-                        Image {
-                            anchors {
-                                left: parent.left
-                                verticalCenter: parent.verticalCenter
-                                leftMargin: 12
+                    Rectangle {
+                        id: primaryButton
+                        Layout.alignment: Qt.AlignRight
+                        radius: 14
+                        implicitHeight: 60
+                        implicitWidth: Math.max(190, primaryRow.implicitWidth + 48)
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0.0; color: primaryArea.containsMouse || delegate.highlighted ? "#18b4ff" : Qt.rgba(1, 1, 1, 0.10) }
+                            GradientStop { position: 1.0; color: primaryArea.containsMouse || delegate.highlighted ? "#0077e6" : Qt.rgba(1, 1, 1, 0.07) }
+                        }
+                        scale: primaryArea.pressed ? 0.97 : 1.0
+                        Behavior on scale { NumberAnimation { duration: 90 } }
+                        RowLayout {
+                            id: primaryRow
+                            anchors.centerIn: parent
+                            spacing: 10
+                            Image {
+                                Layout.preferredWidth: 26
+                                Layout.preferredHeight: 26
+                                sourceSize: Qt.size(26, 26)
+                                source: delegate.highlighted ? root.controllerButton("cross") : "qrc:/icons/play-24px.svg"
+                                visible: delegate.highlighted || delegate.isPlay
                             }
-                            width: 28
-                            height: 28
-                            sourceSize: Qt.size(width, height)
-                            source: root.controllerButton("box")
-                            visible: delegate.highlighted
+                            Label {
+                                text: delegate.primaryActionLabel
+                                font.pixelSize: 19
+                                font.bold: true
+                                color: "white"
+                            }
+                        }
+                        MouseArea {
+                            id: primaryArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: delegate.connectToHost()
                         }
                     }
 
-                    Button {
-                        Layout.alignment: Qt.AlignCenter
-                        text: qsTr("Wake Up")
-                        flat: true
-                        padding: 20
-                        leftPadding: delegate.highlighted ? 50 : undefined
-                        visible: modelData.registered && !modelData.duid && !modelData.discovered
-                        focusPolicy: Qt.NoFocus
-                        onClicked: delegate.wakeUpHost()
-                        Material.roundedScale: Material.SmallScale
+                    RowLayout {
+                        Layout.alignment: Qt.AlignRight
+                        spacing: 2
 
-                        Image {
-                            anchors {
-                                left: parent.left
-                                verticalCenter: parent.verticalCenter
-                                leftMargin: 12
-                            }
-                            width: 28
-                            height: 28
-                            sourceSize: Qt.size(width, height)
-                            source: root.controllerButton("pyramid")
-                            visible: delegate.highlighted
+                        SecondaryAction {
+                            showIcon: delegate.highlighted
+                            text: qsTr("Wake up")
+                            buttonIcon: root.controllerButton("pyramid")
+                            visible: modelData.registered && !modelData.duid && !modelData.discovered
+                            onClicked: delegate.wakeUpHost()
+                        }
+                        SecondaryAction {
+                            showIcon: delegate.highlighted
+                            text: qsTr("Console PIN")
+                            buttonIcon: "qrc:/icons/l1.svg"
+                            visible: modelData.registered
+                            onClicked: delegate.setConsolePin()
+                        }
+                        SecondaryAction {
+                            showIcon: delegate.highlighted
+                            text: modelData.manual ? qsTr("Delete") : qsTr("Hide")
+                            buttonIcon: root.controllerButton("box")
+                            visible: modelData.manual || (modelData.discovered && !modelData.registered)
+                            onClicked: delegate.deleteHost()
                         }
                     }
-
-                    Button {
-                        Layout.alignment: Qt.AlignCenter
-                        text: qsTr("Update Console Pin")
-                        flat: true
-                        padding: 20
-                        leftPadding: delegate.highlighted ? 50 : undefined
-                        visible: modelData.registered
-                        focusPolicy: Qt.NoFocus
-                        onClicked: delegate.setConsolePin()
-                        Material.roundedScale: Material.SmallScale
-
-                        Image {
-                            anchors {
-                                left: parent.left
-                                verticalCenter: parent.verticalCenter
-                                leftMargin: 12
-                            }
-                            width: 28
-                            height: 28
-                            sourceSize: Qt.size(width, height)
-                            source: "qrc:/icons/l1.svg"
-                            visible: delegate.highlighted
-                        }
-                    }
-                } 
-            } 
-        }
-    }     
-
-    RoundButton {
-        anchors {
-            left: parent.left
-            bottom: parent.bottom
-            margins: 20
-        }
-        icon.source: "qrc:/icons/discover-" + (checked ? "" : "off-") + "24px.svg"
-        icon.width: 50
-        icon.height: 50
-        padding: 20
-        focusPolicy: Qt.NoFocus
-        checkable: true
-        checked: Chiaki.discoveryEnabled
-        onToggled: Chiaki.discoveryEnabled = !Chiaki.discoveryEnabled
-        Material.background: Material.accent
-    }
-
-    // Which controllers are connected, so it's clear before connecting whether the pad was picked up
-    Row {
-        anchors {
-            left: parent.left
-            bottom: parent.bottom
-            leftMargin: 120
-            bottomMargin: 18
-        }
-        spacing: 8
-        readonly property var pads: {
-            let out = [];
-            for (let i = 0; i < Chiaki.controllers.length; i++) {
-                const c = Chiaki.controllers[i];
-                if (c.steamVirtual)
-                    continue;
-                // SDL names can carry a GUID in brackets, e.g. "XInput Controller #2 (0300ba66...)"
-                const cleanName = (c.name || "").replace(/\s*\([0-9a-fA-F]{8,}\)\s*$/, "").trim();
-                let label = c.dualSenseEdge ? qsTr("DualSense Edge") : (c.dualSense ? qsTr("DualSense") : (cleanName || qsTr("Controller")));
-                out.push(label);
-            }
-            return out;
-        }
-        Repeater {
-            model: parent.pads
-            delegate: Rectangle {
-                required property string modelData
-                radius: height / 2
-                height: 30
-                width: padLabel.implicitWidth + 26
-                color: Qt.rgba(0.12, 0.62, 0.34, 0.25)
-                border.color: "#1e9e57"
-                border.width: 1
-                Label {
-                    id: padLabel
-                    anchors.centerIn: parent
-                    text: "● " + parent.modelData
-                    font.pixelSize: 13
                 }
             }
-        }
-        Label {
-            visible: parent.pads.length === 0
-            height: 30
-            verticalAlignment: Text.AlignVCenter
-            text: qsTr("No controller · keyboard + mouse")
-            opacity: 0.55
-            font.pixelSize: 13
-        }
-    }
-
-    StreamPresetBar {
-        id: presetBar
-        anchors {
-            horizontalCenter: parent.horizontalCenter
-            bottom: parent.bottom
-            bottomMargin: 12
         }
     }
 
@@ -655,13 +673,13 @@ Pane {
     Rectangle {
         anchors {
             horizontalCenter: parent.horizontalCenter
-            bottom: presetBar.top
-            bottomMargin: 10
+            bottom: statusBar.top
+            bottomMargin: 12
         }
         visible: root.sessionAdvice.length > 0
-        radius: 10
-        color: Qt.rgba(0.79, 0.54, 0.07, 0.18)
-        border.color: "#c98a12"
+        radius: 12
+        color: Qt.rgba(0.94, 0.66, 0.18, 0.14)
+        border.color: "#f0a92e"
         border.width: 1
         implicitWidth: adviceRow.implicitWidth + 32
         implicitHeight: adviceRow.implicitHeight + 16
@@ -696,61 +714,185 @@ Pane {
         }
     }
 
-    // Self-update status: shown while downloading and once an update is ready
+    // Bottom status bar: discovery, controllers, stream quality, version / updates
     Rectangle {
-        id: updateBanner
-        readonly property var upd: Chiaki.updater
-        visible: upd && (upd.state === "downloading" || upd.state === "ready" || upd.state === "available")
+        id: statusBar
         anchors {
-            right: parent.right
-            bottom: versionLabel.top
-            rightMargin: 20
-            bottomMargin: 8
-        }
-        radius: 10
-        color: Qt.rgba(0, 0.65, 1, 0.15)
-        border.color: Material.accent
-        border.width: 1
-        implicitWidth: updateRow.implicitWidth + 28
-        implicitHeight: updateRow.implicitHeight + 14
-        RowLayout {
-            id: updateRow
-            anchors.centerIn: parent
-            spacing: 12
-            Label {
-                text: !updateBanner.upd ? "" : updateBanner.upd.state === "downloading"
-                    ? qsTr("Downloading update %1… %2%").arg(updateBanner.upd.latestVersion).arg(Math.round(updateBanner.upd.progress * 100))
-                    : updateBanner.upd.state === "available"
-                    ? qsTr("Update %1 is available").arg(updateBanner.upd.latestVersion)
-                    : qsTr("Update %1 ready · installs when you close the app").arg(updateBanner.upd.latestVersion)
-            }
-            Button {
-                visible: updateBanner.upd && updateBanner.upd.state === "available"
-                text: qsTr("Download")
-                highlighted: true
-                focusPolicy: Qt.NoFocus
-                Material.roundedScale: Material.SmallScale
-                onClicked: Chiaki.updater.openReleasePage()
-            }
-            Button {
-                visible: updateBanner.upd && updateBanner.upd.state === "ready"
-                text: qsTr("Restart & update")
-                highlighted: true
-                focusPolicy: Qt.NoFocus
-                Material.roundedScale: Material.SmallScale
-                onClicked: Chiaki.updater.installAndRestart()
-            }
-        }
-    }
-
-    Label {
-        id: versionLabel
-        anchors {
+            left: parent.left
             right: parent.right
             bottom: parent.bottom
-            margins: 20
         }
-        text: Chiaki.updater ? Chiaki.updater.currentVersion : Qt.application.version
+        height: 68
+        color: Qt.rgba(0, 0, 0, 0.30)
+        Rectangle {
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: parent.top
+            }
+            height: 1
+            color: consolePane.hairline
+        }
+
+        // Left: discovery toggle + controllers
+        RowLayout {
+            anchors {
+                left: parent.left
+                leftMargin: 20
+                verticalCenter: parent.verticalCenter
+            }
+            spacing: 12
+
+            Rectangle {
+                id: discoveryToggle
+                readonly property bool on: Chiaki.discoveryEnabled
+                radius: 17
+                implicitHeight: 34
+                implicitWidth: discoveryRow.implicitWidth + 24
+                color: on ? Qt.rgba(0, 0.65, 1, discoveryArea.containsMouse ? 0.26 : 0.16) : (discoveryArea.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.05))
+                border.width: 1
+                border.color: on ? Qt.rgba(0, 0.65, 1, 0.6) : consolePane.hairline
+                RowLayout {
+                    id: discoveryRow
+                    anchors.centerIn: parent
+                    spacing: 6
+                    Image {
+                        Layout.preferredWidth: 18
+                        Layout.preferredHeight: 18
+                        sourceSize: Qt.size(18, 18)
+                        source: "qrc:/icons/discover-" + (discoveryToggle.on ? "" : "off-") + "24px.svg"
+                    }
+                    Label {
+                        text: discoveryToggle.on ? qsTr("Searching home network") : qsTr("Home network search off")
+                        font.pixelSize: 13
+                    }
+                }
+                MouseArea {
+                    id: discoveryArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Chiaki.discoveryEnabled = !Chiaki.discoveryEnabled
+                }
+                ToolTip.visible: discoveryArea.containsMouse
+                ToolTip.delay: 400
+                ToolTip.text: qsTr("Look for consoles on this network. Click to turn on or off.")
+            }
+
+            // Which controllers are connected, so it's clear before connecting whether the pad was picked up
+            Repeater {
+                model: statusBar.pads
+                delegate: Rectangle {
+                    id: padPill
+                    required property string modelData
+                    radius: 17
+                    implicitHeight: 34
+                    implicitWidth: padRow.implicitWidth + 24
+                    color: Qt.rgba(0.18, 0.8, 0.44, 0.12)
+                    border.color: Qt.rgba(0.18, 0.8, 0.44, 0.55)
+                    border.width: 1
+                    RowLayout {
+                        id: padRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Image {
+                            Layout.preferredWidth: 18
+                            Layout.preferredHeight: 18
+                            sourceSize: Qt.size(18, 18)
+                            source: "qrc:/icons/gamepad-24px.svg"
+                        }
+                        Label {
+                            text: padPill.modelData
+                            font.pixelSize: 13
+                        }
+                    }
+                }
+            }
+            Label {
+                visible: statusBar.pads.length === 0
+                text: qsTr("No controller · keyboard + mouse")
+                color: consolePane.textFaint
+                font.pixelSize: 13
+            }
+        }
+
+        readonly property var pads: {
+                    let out = [];
+                    for (let i = 0; i < Chiaki.controllers.length; i++) {
+                        const c = Chiaki.controllers[i];
+                        if (c.steamVirtual)
+                            continue;
+                        // SDL names can carry a GUID in brackets, e.g. "XInput Controller #2 (0300ba66...)"
+                        const cleanName = (c.name || "").replace(/\s*\([0-9a-fA-F]{8,}\)\s*$/, "").trim();
+                        out.push(c.dualSenseEdge ? qsTr("DualSense Edge") : (c.dualSense ? qsTr("DualSense") : (cleanName || qsTr("Controller"))));
+                    }
+                    return out;
+        }
+
+        StreamPresetBar {
+            id: presetBar
+            anchors.centerIn: parent
+        }
+
+        // Right: update status + version
+        RowLayout {
+            anchors {
+                right: parent.right
+                rightMargin: 20
+                verticalCenter: parent.verticalCenter
+            }
+            spacing: 12
+
+            Rectangle {
+                id: updateBanner
+                readonly property var upd: Chiaki.updater
+                visible: upd && (upd.state === "downloading" || upd.state === "ready" || upd.state === "available")
+                radius: 17
+                implicitHeight: 38
+                implicitWidth: updateRow.implicitWidth + 24
+                color: Qt.rgba(0, 0.65, 1, 0.14)
+                border.color: Qt.rgba(0, 0.65, 1, 0.6)
+                border.width: 1
+                RowLayout {
+                    id: updateRow
+                    anchors.centerIn: parent
+                    spacing: 10
+                    Label {
+                        font.pixelSize: 13
+                        text: !updateBanner.upd ? "" : updateBanner.upd.state === "downloading"
+                            ? qsTr("Downloading update %1… %2%").arg(updateBanner.upd.latestVersion).arg(Math.round(updateBanner.upd.progress * 100))
+                            : updateBanner.upd.state === "available"
+                            ? qsTr("Update %1 is available").arg(updateBanner.upd.latestVersion)
+                            : qsTr("Update %1 ready · installs when you close the app").arg(updateBanner.upd.latestVersion)
+                    }
+                    Button {
+                        visible: updateBanner.upd && updateBanner.upd.state === "available"
+                        text: qsTr("Download")
+                        highlighted: true
+                        focusPolicy: Qt.NoFocus
+                        implicitHeight: 34
+                        Material.roundedScale: Material.SmallScale
+                        onClicked: Chiaki.updater.openReleasePage()
+                    }
+                    Button {
+                        visible: updateBanner.upd && updateBanner.upd.state === "ready"
+                        text: qsTr("Restart & update")
+                        highlighted: true
+                        focusPolicy: Qt.NoFocus
+                        implicitHeight: 34
+                        Material.roundedScale: Material.SmallScale
+                        onClicked: Chiaki.updater.installAndRestart()
+                    }
+                }
+            }
+
+            Label {
+                id: versionLabel
+                text: Chiaki.updater ? Chiaki.updater.currentVersion : Qt.application.version
+                color: consolePane.textFaint
+                font.pixelSize: 12
+            }
+        }
     }
 
     // Empty state: shown only while no console is listed
@@ -761,26 +903,82 @@ Pane {
         return true;
     }
 
-    Label {
-        anchors {
-            horizontalCenter: parent.horizontalCenter
-            top: logoImage.bottom
-            topMargin: 24
-        }
+    ColumnLayout {
+        anchors.centerIn: parent
+        anchors.verticalCenterOffset: -20
         visible: consolePane.noConsoles
-        horizontalAlignment: Text.AlignHCenter
-        opacity: consolePane.networkWarning ? 0.95 : 0.6
-        color: consolePane.networkWarning ? "#ffcc80" : Material.foreground
-        font.pixelSize: 18
-        text: {
-            if (consolePane.networkWarning && Chiaki.settings.psnAuthToken)
-                return consolePane.networkWarning + "\n\n"
-                    + qsTr("You're signed in to PSN, but PSN lists no PS5 with Remote Play for this account.\nOn the PS5: Settings > System > Remote Play > Enable Remote Play, and\nPower Saving > Features Available in Rest Mode > Stay Connected to the Internet.\nThen click Refresh PSN Hosts.");
-            if (consolePane.networkWarning)
-                return consolePane.networkWarning;
-            return Chiaki.discoveryEnabled
-                ? qsTr("Looking for consoles on your network…\nMake sure your PS5 is on or in rest mode with Remote Play enabled,\nor use Add Manual Host.")
-                : qsTr("Console discovery is off. Turn it on with the button in the corner,\nor use Add Manual Host.");
+        spacing: 18
+        width: Math.min(parent.width - 80, 760)
+
+        Image {
+            id: logoImage
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: Math.min(consolePane.width, consolePane.height) / 4
+            Layout.preferredHeight: Layout.preferredWidth
+            source: "qrc:/icons/nimbus-logo-white.svg"
+            fillMode: Image.PreserveAspectFit
+            sourceSize: Qt.size(Layout.preferredWidth, Layout.preferredHeight)
+            opacity: 0.18
+            SequentialAnimation on opacity {
+                running: consolePane.noConsoles && consolePane.visible
+                loops: Animation.Infinite
+                NumberAnimation { from: 0.12; to: 0.26; duration: 1600; easing.type: Easing.InOutSine }
+                NumberAnimation { from: 0.26; to: 0.12; duration: 1600; easing.type: Easing.InOutSine }
+            }
+        }
+
+        Label {
+            Layout.alignment: Qt.AlignHCenter
+            text: consolePane.networkWarning ? qsTr("Can't see your home network") : (Chiaki.discoveryEnabled ? qsTr("Looking for consoles…") : qsTr("No consoles yet"))
+            font.pixelSize: 26
+            font.bold: true
+        }
+
+        Label {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            color: consolePane.networkWarning ? "#ffcc80" : consolePane.textDim
+            font.pixelSize: 16
+            lineHeight: 1.25
+            text: {
+                if (consolePane.networkWarning && Chiaki.settings.psnAuthToken)
+                    return consolePane.networkWarning + "\n\n"
+                        + qsTr("You're signed in to PSN, but PSN lists no PS5 with Remote Play for this account. On the PS5: Settings > System > Remote Play > Enable Remote Play, and Power Saving > Features Available in Rest Mode > Stay Connected to the Internet. Then click Refresh.");
+                if (consolePane.networkWarning)
+                    return consolePane.networkWarning;
+                return Chiaki.discoveryEnabled
+                    ? qsTr("Make sure your PS5 is on or in rest mode with Remote Play enabled, or add it by IP address with the + button.")
+                    : qsTr("Home network search is off. Turn it on at the bottom left, or add a console with the + button.");
+            }
+        }
+
+        RowLayout {
+            Layout.alignment: Qt.AlignHCenter
+            spacing: 12
+            Button {
+                text: qsTr("Refresh")
+                visible: !!Chiaki.settings.psnAuthToken
+                highlighted: true
+                focusPolicy: Qt.NoFocus
+                Material.roundedScale: Material.SmallScale
+                onClicked: Chiaki.refreshPsnToken()
+            }
+            Button {
+                text: qsTr("Sign in to PSN")
+                visible: !Chiaki.settings.psnAuthToken
+                highlighted: true
+                focusPolicy: Qt.NoFocus
+                Material.roundedScale: Material.SmallScale
+                onClicked: root.showPSNTokenDialog(false)
+            }
+            Button {
+                text: qsTr("Add by IP address")
+                flat: true
+                focusPolicy: Qt.NoFocus
+                Material.roundedScale: Material.SmallScale
+                onClicked: root.showManualHostDialog()
+            }
         }
     }
 
@@ -793,24 +991,5 @@ Pane {
         triggeredOnStart: true
         running: consolePane.noConsoles && consolePane.visible
         onTriggered: consolePane.networkWarning = Chiaki.localNetworkWarning()
-    }
-
-    Image {
-        id: logoImage
-        visible: consolePane.noConsoles
-        anchors.centerIn: parent
-        source: "qrc:/icons/nimbus-logo-white.svg"
-        fillMode: Image.PreserveAspectFit
-        sourceSize: Qt.size(Math.min(parent.width, parent.height) / 2, Math.min(parent.width, parent.height) / 2)
-
-        PropertyAnimation {
-            target: logoImage
-            property: "opacity"
-            from: 0.05
-            to: 0.20
-            duration: 1000
-            easing.type: Easing.OutCubic
-            running: true
-        }
     }
 }

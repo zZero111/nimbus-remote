@@ -451,8 +451,7 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 			},
 			[vcodec](const uint8_t *buf, size_t size) {
 				return StreamRecorder::isKeyframe(buf, size, vcodec) || StreamRecorder::hasParameterSets(buf, size, vcodec);
-			},
-			4);
+			});
 #if CHIAKI_LIB_ENABLE_PI_DECODER
 	}
 #endif
@@ -776,10 +775,12 @@ StreamSession::~StreamSession()
 	if(async_decoder)
 	{
 		const auto st = async_decoder->stats();
-		CHIAKI_LOGI(GetChiakiLog(), "Decode thread: %llu decoded, %llu skipped, %llu overflows, %llu decode errors",
-			(unsigned long long)st.decoded, (unsigned long long)st.skipped, (unsigned long long)st.overflows, (unsigned long long)st.decode_errors);
+		CHIAKI_LOGI(GetChiakiLog(), "Decode thread: %llu decoded, %llu skipped, %llu overflows, %llu decode errors (%llu recoveries), %llu bursts absorbed, deepest backlog %zu",
+			(unsigned long long)st.decoded, (unsigned long long)st.skipped, (unsigned long long)st.overflows, (unsigned long long)st.decode_errors,
+			(unsigned long long)st.error_recoveries, (unsigned long long)st.bursts, st.max_backlog);
 		async_decoder.reset();
 	}
+	wifi_streaming.reset();
 	chiaki_session_fini(&session);
 	chiaki_opus_decoder_fini(&opus_decoder);
 	chiaki_opus_encoder_fini(&opus_encoder);
@@ -859,6 +860,9 @@ void StreamSession::Start()
 {
 	if(!connect_timer.isValid())
 		connect_timer.start();
+	// Stop Windows' periodic Wi-Fi scans from causing loss bursts for as long as we stream
+	if(!wifi_streaming)
+		wifi_streaming = std::make_unique<WifiStreamingMode>();
 	ChiakiErrorCode err = chiaki_session_start(&session);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{

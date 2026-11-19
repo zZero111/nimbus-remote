@@ -38,7 +38,10 @@ Publishing the release starts `.github/workflows/nimbus-macos.yml`, which builds
 | **Stream menu additions**: Stats overlay toggle, Snap (screenshot), Rec (recording) | `gui/src/qml/StreamView.qml` |
 | **Discovery and registration work with VPNs installed**: Windows sends `255.255.255.255` out of the highest-priority adapter only, often a VPN (Radmin, Hamachi, ZeroTier). Broadcasts now also go to each active adapter's own subnet. | `lib/src/broadcast_win.c`, `lib/src/utils.h` |
 | **Register over the internet**: PS5s on your PSN account are listed even before they're registered, and can be registered automatically over PSN. chiaki-ng hid them until they had been registered on the home network. | `gui/src/qmlbackend.cpp` (`updatePsnHosts`, `displayServerAt`, `autoRegister`, `finishAutoRegister`) |
-| **Decoding on its own thread**: the network thread only queues video (at most about 66 ms); a dedicated thread decodes. Heavy frames no longer stall the network, and a PC that falls behind skips to a fresh keyframe instead of building up delay. | `gui/src/asyncdecoder.cpp`, `gui/src/streamsession.cpp` |
+| **Decoding on its own thread**: the network thread only queues video; a dedicated thread decodes, so heavy frames no longer stall the network. Recovery is gentle: Wi-Fi bursts of several frames are decoded through instead of dropped, a single bad frame doesn't throw away the frames after it, and only a PC that is hopelessly behind (~0.5 s) or keeps failing skips to a fresh keyframe. | `gui/src/asyncdecoder.cpp`, `gui/src/streamsession.cpp` |
+| **Wi-Fi streaming mode**: while streaming, Windows' background Wi-Fi scans (a stutter about once a minute) are paused and the adapter is put in media streaming mode, like Moonlight does. Windows undoes it when the stream ends. | `gui/src/wifistreaming.cpp` |
+| **Redesigned home screen**: icon header, larger console cards with status, per-console quality selector and a clear Play button, status bar with network search, controllers, stream quality and updates | `gui/src/qml/MainView.qml`, `gui/src/qml/StreamPresetBar.qml` |
+| **Clearer stream overlay**: stats panel leads with a connection rating (Excellent / Good / Fair / Poor) and shows ping; the flashing Wi-Fi icon is replaced by a small "Unstable connection · x% packet loss" notice | `gui/src/qmlmainwindow.cpp`, `gui/src/qml/StreamView.qml` |
 | **Stream socket receive buffer of 512 KB** (was 100 KB), so keyframe bursts aren't dropped on Wi-Fi | `lib/src/takion.c` |
 | **Intel laptops tune themselves**: with the decoder on Auto, Intel integrated graphics use `d3d11va`, and the first stream switches High Quality render presets to Default | `gui/src/qmlbackend.cpp`, `gui/src/qmlmainwindow.cpp` |
 | **Self-update** from GitHub releases: background download, "Restart & update" button or install on exit | `gui/src/updater.cpp`, `gui/src/qml/MainView.qml` |
@@ -82,7 +85,7 @@ Tests:
 ```bash
 bash nimbus/test-screenshot.sh   # colour conversion for NV12 / P010 HDR screenshots (8 checks)
 bash nimbus/test-recorder.sh     # encodes H.264 + Opus, records mid-stream, decodes the file back (20 checks)
-bash nimbus/test-asyncdecoder.sh # decode thread: order, non-blocking queue, overflow recovery, errors (14 checks)
+bash nimbus/test-asyncdecoder.sh # decode thread: order, Wi-Fi bursts, non-blocking queue, overflow recovery, errors (18 checks)
 ```
 
 ## Testing status

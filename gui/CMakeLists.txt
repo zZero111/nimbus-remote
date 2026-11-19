@@ -65,6 +65,8 @@ set(SOURCE_FILES
 	src/asyncdecoder.cpp
 	include/updater.h
 	src/updater.cpp
+	include/wifistreaming.h
+	src/wifistreaming.cpp
 	)
 set(RESOURCE_FILES "")
 
@@ -110,6 +112,9 @@ target_link_libraries(placebo-libav-impl PkgConfig::LIBPLACEBO FFMPEG::avcodec F
 target_link_libraries(chiaki PkgConfig::LIBPLACEBO placebo-libav-impl FFMPEG::avformat FFMPEG::avcodec FFMPEG::avutil)
 
 target_link_libraries(chiaki chiaki-lib)
+if(WIN32)
+	target_link_libraries(chiaki wlanapi)
+endif()
 if(CHIAKI_ENABLE_CLI)
 	add_definitions(-DCHIAKI_ENABLE_CLI)
 	target_link_libraries(chiaki chiaki-cli-lib)
