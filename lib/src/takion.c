@@ -41,10 +41,12 @@
 #define TAKION_A_RWND 0x19000
 // OS receive buffer for the stream socket. The protocol window above (100 KB) is what we
 // advertise to the console and must stay as is, but using it as the socket buffer too made
-// Windows drop packets whenever a keyframe burst (often 200-500 KB at 1080p) arrived faster than
-// the receive thread drained it, which is common on Wi-Fi laptops. The console then saw loss and
-// cut its bitrate to ~1 Mbps.
-#define TAKION_SOCKET_RCVBUF (4 * 1024 * 1024)
+// Windows drop packets whenever a keyframe burst arrived faster than the receive thread drained
+// it, which is common on Wi-Fi laptops. The console then saw loss and cut its bitrate to ~1 Mbps.
+// Not too large either: decoding runs on the receive thread, so when a slow PC falls behind,
+// everything in this buffer becomes input delay (4 MB was ~2 s at 15 Mbps). 512 KB absorbs a
+// keyframe burst but caps the backlog at roughly a quarter of a second.
+#define TAKION_SOCKET_RCVBUF (512 * 1024)
 #define TAKION_OUTBOUND_STREAMS 0x64
 
 static void takion_set_socket_rcvbuf(ChiakiTakion *takion)
