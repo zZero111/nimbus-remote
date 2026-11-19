@@ -24,9 +24,9 @@ RowLayout {
 
     // Segmented control
     Rectangle {
-        radius: 12
+        radius: 19
         color: Qt.rgba(0, 0, 0, 0.35)
-        border.color: Qt.rgba(1, 1, 1, 0.09)
+        border.color: Qt.rgba(1, 1, 1, 0.12)
         implicitHeight: 38
         implicitWidth: segs.implicitWidth + 8
         Row {
@@ -39,10 +39,10 @@ RowLayout {
                     id: seg
                     required property var modelData
                     readonly property bool active: Presets.matches(Chiaki.settings, modelData)
-                    radius: 9
+                    radius: 15
                     height: 30
                     width: segText.implicitWidth + 30
-                    color: active ? Material.accent : (segMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                    color: active ? "white" : (segMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : "transparent")
                     Behavior on color { ColorAnimation { duration: 120 } }
                     Label {
                         id: segText
@@ -50,7 +50,7 @@ RowLayout {
                         text: qsTr(seg.modelData.name)
                         font.pixelSize: 14
                         font.bold: seg.active
-                        color: seg.active ? "#05131c" : Qt.rgba(1, 1, 1, 0.75)
+                        color: seg.active ? "#0b0f17" : Qt.rgba(1, 1, 1, 0.75)
                     }
                     MouseArea {
                         id: segMouse
