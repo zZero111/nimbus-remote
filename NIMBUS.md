@@ -25,6 +25,9 @@ No install is needed. Each PC keeps its own settings and console registration.
 | **Stream menu additions**: Stats overlay toggle, Snap (screenshot), Rec (recording) | `gui/src/qml/StreamView.qml` |
 | **Discovery and registration work with VPNs installed**: Windows sends `255.255.255.255` out of the highest-priority adapter only, often a VPN (Radmin, Hamachi, ZeroTier). Broadcasts now also go to each active adapter's own subnet. | `lib/src/broadcast_win.c`, `lib/src/utils.h` |
 | **Register over the internet**: PS5s on your PSN account are listed even before they're registered, and can be registered automatically over PSN. chiaki-ng hid them until they had been registered on the home network. | `gui/src/qmlbackend.cpp` (`updatePsnHosts`, `displayServerAt`, `autoRegister`, `finishAutoRegister`) |
+| **Decoding on its own thread**: the network thread only queues video (at most about 66 ms); a dedicated thread decodes. Heavy frames no longer stall the network, and a PC that falls behind skips to a fresh keyframe instead of building up delay. | `gui/src/asyncdecoder.cpp`, `gui/src/streamsession.cpp` |
+| **Stream socket receive buffer of 512 KB** (was 100 KB), so keyframe bursts aren't dropped on Wi-Fi | `lib/src/takion.c` |
+| **Intel laptops tune themselves**: with the decoder on Auto, Intel integrated graphics use `d3d11va`, and the first stream switches High Quality render presets to Default | `gui/src/qmlbackend.cpp`, `gui/src/qmlmainwindow.cpp` |
 | **Network hint**: when the PC is online only through phone USB tethering or VPNs, the home screen explains why no console can be found | `gui/src/netcheck.cpp`, `gui/src/qml/MainView.qml` |
 | **Own logo** on the home screen (Settings > About still credits chiaki-ng) | `gui/res/nimbus-logo-white.svg` |
 | **Own settings store**: on first launch it copies an existing chiaki-ng setup (consoles, PSN login, mappings, profiles) and never changes the original | `gui/src/main.cpp` |
@@ -64,6 +67,7 @@ Tests:
 ```bash
 bash nimbus/test-screenshot.sh   # colour conversion for NV12 / P010 HDR screenshots (8 checks)
 bash nimbus/test-recorder.sh     # encodes H.264 + Opus, records mid-stream, decodes the file back (20 checks)
+bash nimbus/test-asyncdecoder.sh # decode thread: order, non-blocking queue, overflow recovery, errors (14 checks)
 ```
 
 ## Testing status
