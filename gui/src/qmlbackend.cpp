@@ -24,6 +24,7 @@
 #include <QWebEngineCookieStore>
 #endif
 #include <QUrlQuery>
+#include <QSettings>
 #include <QMetaObject>
 #include <QtGlobal>
 #include <QGuiApplication>
@@ -1001,8 +1002,27 @@ void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
                           << "is not currently available, falling back to auto";
         session_info.hw_decoder = "auto";
     }
+    // Once per install on Intel integrated graphics: the High Quality render presets cost more
+    // GPU time per frame than these chips have at 60 fps, which showed up as input delay.
+    // Switch to Default the first time; if the user picks a heavier preset later, keep it.
+    if(window && window->intelIntegratedCard())
+    {
+        QSettings app_settings;
+        if(!app_settings.value("nimbus/intel_render_tuned", false).toBool())
+        {
+            app_settings.setValue("nimbus/intel_render_tuned", true);
+            const int preset = settings_qml->videoPreset();
+            if(preset >= static_cast<int>(QmlMainWindow::VideoPreset::HighQuality)
+                && preset != static_cast<int>(QmlMainWindow::VideoPreset::Custom))
+            {
+                qCInfo(chiakiGui) << "Intel integrated graphics: switching render preset to Default for smooth play";
+                settings_qml->setVideoPreset(static_cast<int>(QmlMainWindow::VideoPreset::Default));
+                window->setVideoPreset(QmlMainWindow::VideoPreset::Default);
+            }
+        }
+    }
     bool use_opengl_renderer = window && window->runtimeRendererBackend() == static_cast<int>(RenderBackend::OpenGL);
-    bool prefer_cuda = window && window->nvidiaCard() && availableDecoders.contains("cuda");
+    bool prefer_cuda =window && window->nvidiaCard() && availableDecoders.contains("cuda");
     auto fallbackVulkanDecoderForOpenGL = [&]() {
         if (!use_opengl_renderer || session_info.hw_decoder != "vulkan")
             return;
@@ -1070,7 +1090,14 @@ void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
             session_info.hw_decoder = "vaapi";
         }
 #elif defined(Q_OS_WIN)
-        if(!use_opengl_renderer && availableDecoders.contains("vulkan"))
+        // Intel integrated GPUs on Windows: Vulkan video decode is often missing or slow there,
+        // while D3D11 decoding is the vendor's well-trodden path
+        if(window && window->intelIntegratedCard() && availableDecoders.contains("d3d11va"))
+        {
+            qCInfo(chiakiGui) << "Auto hw decoder selecting d3d11va for intel integrated graphics";
+            session_info.hw_decoder = "d3d11va";
+        }
+        else if(!use_opengl_renderer && availableDecoders.contains("vulkan"))
         {
             qCInfo(chiakiGui) << "Auto hw decoder selecting vulkan";
             session_info.hw_decoder = "vulkan";

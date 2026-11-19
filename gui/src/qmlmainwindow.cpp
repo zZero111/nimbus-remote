@@ -5083,6 +5083,11 @@ void QmlMainWindow::init(Settings *settings, bool exit_app_on_stream_exit)
             nvidia_card = true;
             qCInfo(chiakiGui) << "Using nvidia graphics card";
         }
+        else if(vk_device_props.vendorID == 0x8086 && vk_device_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+        {
+            intel_integrated_card = true;
+            qCInfo(chiakiGui) << "Using intel integrated graphics";
+        }
         }
         }
 vulkan_setup_done:

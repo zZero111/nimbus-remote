@@ -32,8 +32,10 @@
 #include "controllermanager.h"
 #include "settings.h"
 #include "recorder.h"
+#include "asyncdecoder.h"
 
 #include <atomic>
+#include <memory>
 
 #include <QObject>
 #include <QImage>
@@ -170,6 +172,8 @@ class StreamSession : public QObject
 		SessionLog log;
 		ChiakiSession session;
 		ChiakiOpusDecoder opus_decoder;
+		// Video decoding runs on its own thread (see asyncdecoder.h)
+		std::unique_ptr<AsyncVideoDecoder> async_decoder;
 		// Recording: the console's encoded video/audio are tapped before decoding
 		StreamRecorder recorder;
 		std::atomic<bool> recording_active{false};

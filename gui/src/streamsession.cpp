@@ -437,6 +437,22 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		}
 		chiaki_log_sniffer_fini(&sniffer);
 		ffmpeg_decoder->log = GetChiakiLog();
+
+		// Decode on our own thread so the network thread never waits on the decoder
+		const bool h265 = chiaki_target_is_ps5(connect_info.target) && chiaki_codec_is_h265(connect_info.video_profile.codec);
+		const auto vcodec = h265 ? StreamRecorder::VideoCodec::H265 : StreamRecorder::VideoCodec::H264;
+		async_decoder = std::make_unique<AsyncVideoDecoder>(
+			[this](const uint8_t *buf, size_t size, int32_t frames_lost, bool recovered) {
+				return chiaki_ffmpeg_decoder_video_sample_cb(const_cast<uint8_t *>(buf), size, frames_lost, recovered, ffmpeg_decoder);
+			},
+			[this]() {
+				CHIAKI_LOGW(GetChiakiLog(), "Video decoder fell behind or failed, requesting a keyframe");
+				RequestIDR();
+			},
+			[vcodec](const uint8_t *buf, size_t size) {
+				return StreamRecorder::isKeyframe(buf, size, vcodec) || StreamRecorder::hasParameterSets(buf, size, vcodec);
+			},
+			4);
 #if CHIAKI_LIB_ENABLE_PI_DECODER
 	}
 #endif
@@ -756,6 +772,14 @@ StreamSession::~StreamSession()
 		chiaki_session_stop(&session);
 		chiaki_session_join(&session);
 	}
+	// No more samples can arrive now; stop the decode thread before the session and decoder go away
+	if(async_decoder)
+	{
+		const auto st = async_decoder->stats();
+		CHIAKI_LOGI(GetChiakiLog(), "Decode thread: %llu decoded, %llu skipped, %llu overflows, %llu decode errors",
+			(unsigned long long)st.decoded, (unsigned long long)st.skipped, (unsigned long long)st.overflows, (unsigned long long)st.decode_errors);
+		async_decoder.reset();
+	}
 	chiaki_session_fini(&session);
 	chiaki_opus_decoder_fini(&opus_decoder);
 	chiaki_opus_encoder_fini(&opus_encoder);
@@ -858,6 +882,12 @@ bool StreamSession::RecordingVideoSampleCb(uint8_t *buf, size_t buf_size, int32_
 	self->recorder.notePossibleParameterSets(buf, buf_size, codec);
 	if(self->recording_active.load(std::memory_order_relaxed))
 		self->recorder.writeVideo(buf, buf_size);
+	if(self->async_decoder)
+	{
+		// Queued for the decode thread. Decode errors are handled there by requesting a keyframe.
+		self->async_decoder->push(buf, buf_size, frames_lost, frame_recovered);
+		return true;
+	}
 	return chiaki_ffmpeg_decoder_video_sample_cb(buf, buf_size, frames_lost, frame_recovered, self->ffmpeg_decoder);
 }
 

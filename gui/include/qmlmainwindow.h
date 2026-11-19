@@ -131,6 +131,7 @@ public:
 
     bool amdCard() const;
     bool nvidiaCard() const;
+    bool intelIntegratedCard() const { return intel_integrated_card; }
     bool wasMaximized() const { return was_maximized; };
     bool isWindowAdjustable() const { return is_window_adjustable; }
     void setWindowAdjustable(bool adjustable) { is_window_adjustable = adjustable; }
@@ -309,6 +310,7 @@ private:
     bool was_maximized = false;
     bool amd_card = false;
     bool nvidia_card = false;
+    bool intel_integrated_card = false;
     bool direct_stream = false;
     std::atomic<qint64> queue_pts_origin_cached_us = -1;
     uint64_t next_frame_target_us = 0;

@@ -61,6 +61,8 @@ set(SOURCE_FILES
 	src/recorder.cpp
 	include/netcheck.h
 	src/netcheck.cpp
+	include/asyncdecoder.h
+	src/asyncdecoder.cpp
 	)
 set(RESOURCE_FILES "")
 
