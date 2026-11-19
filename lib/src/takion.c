@@ -39,7 +39,29 @@
 // VERY similar to SCTP, see RFC 4960
 
 #define TAKION_A_RWND 0x19000
+// OS receive buffer for the stream socket. The protocol window above (100 KB) is what we
+// advertise to the console and must stay as is, but using it as the socket buffer too made
+// Windows drop packets whenever a keyframe burst (often 200-500 KB at 1080p) arrived faster than
+// the receive thread drained it, which is common on Wi-Fi laptops. The console then saw loss and
+// cut its bitrate to ~1 Mbps.
+#define TAKION_SOCKET_RCVBUF (4 * 1024 * 1024)
 #define TAKION_OUTBOUND_STREAMS 0x64
+
+static void takion_set_socket_rcvbuf(ChiakiTakion *takion)
+{
+	int rcvbuf_val = TAKION_SOCKET_RCVBUF;
+	if(setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val)) < 0)
+	{
+		// Fall back to the old size so a restrictive OS still works
+		CHIAKI_LOGW(takion->log, "Takion couldn't set a %d byte receive buffer: " CHIAKI_SOCKET_ERROR_FMT, rcvbuf_val, CHIAKI_SOCKET_ERROR_VALUE);
+		rcvbuf_val = (int)takion->a_rwnd;
+		setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
+	}
+	int actual = 0;
+	socklen_t actual_len = sizeof(actual);
+	if(getsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (CHIAKI_SOCKET_BUF_TYPE)&actual, &actual_len) == 0)
+		CHIAKI_LOGI(takion->log, "Takion socket receive buffer: %d bytes", actual);
+}
 #define TAKION_INBOUND_STREAMS 0x64
 
 #define TAKION_REORDER_QUEUE_SIZE_EXP 4 // => 16 entries
@@ -261,14 +283,8 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, Chiaki
 			CHIAKI_LOGE(takion->log, "Takion had problem reading extra messages from socket using PSN Connection with error: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
 			goto error_sock;
 		}
-		const int rcvbuf_val = takion->a_rwnd;
-		int r = setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
-		if(r < 0)
-		{
-			CHIAKI_LOGE(takion->log, "Takion failed to setsockopt SO_RCVBUF: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
-			ret = CHIAKI_ERR_NETWORK;
-			goto error_sock;
-		}
+		takion_set_socket_rcvbuf(takion);
+		int r = 0;
 
 #if defined(__APPLE__) && TARGET_OS_OSX
 		SInt32 majorVersion;
@@ -349,14 +365,8 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, Chiaki
 			ret = CHIAKI_ERR_NETWORK;
 			goto error_pipe;
 		}
-		const int rcvbuf_val = takion->a_rwnd;
-		int r = setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
-		if(r < 0)
-		{
-			CHIAKI_LOGE(takion->log, "Takion failed to setsockopt SO_RCVBUF: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
-			ret = CHIAKI_ERR_NETWORK;
-			goto error_sock;
-		}
+		takion_set_socket_rcvbuf(takion);
+		int r = 0;
 		if(info->ip_dontfrag)
 		{
 #if defined(__APPLE__) && TARGET_OS_OSX
