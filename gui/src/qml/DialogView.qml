@@ -44,83 +44,102 @@ Item {
 
     onMainItemChanged: {
         if (mainItem) {
-            mainItem.parent = contentItem;
-            mainItem.anchors.fill = contentItem;
+            mainItem.parent = dialogContent;
+            mainItem.anchors.fill = dialogContent;
         }
     }
 
-    ToolBar {
+    // Text grows with the window so dialogs stay readable on large monitors
+    // (1.0 up to a 1600x900 window, at most 1.4x)
+    readonly property real ui: Math.max(1.0, Math.min(1.4, Math.min(width / 1600, height / 900)))
+
+    // Controls and labels inside inherit this font size
+    Control {
+    id: fontScope
+    anchors.fill: parent
+    padding: 0
+    font.pixelSize: Math.round(15 * dialog.ui)
+
+    // PS5-style backdrop shared by every full-screen dialog (settings, registration, ...)
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#123a78" }
+            GradientStop { position: 0.45; color: "#0a1f48" }
+            GradientStop { position: 1.0; color: "#020814" }
+        }
+    }
+
+    Item {
         id: toolBar
         anchors {
             top: parent.top
             left: parent.left
             right: parent.right
         }
-        height: 80
+        height: 84
 
         RowLayout {
             anchors {
                 fill: parent
-                leftMargin: 10
-                rightMargin: 10
+                leftMargin: 20
+                rightMargin: 24
             }
+            spacing: 14
 
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 100
+            RoundButton {
                 flat: true
+                implicitWidth: 52
+                implicitHeight: 52
                 text: "❮"
+                font.pixelSize: 22
                 focusPolicy: Qt.NoFocus
-                Material.roundedScale: Material.SmallScale
                 onClicked: {
                     dialog.rejected();
                     dialog.close();
                 }
+                ToolTip.visible: hovered
+                ToolTip.delay: 400
+                ToolTip.text: qsTr("Back (Circle / Esc)")
             }
 
-            Item { Layout.fillWidth: true }
+            Label {
+                id: titleLabel
+                font.pixelSize: 30
+                font.weight: Font.Light
+            }
+
+            Label {
+                id: headerLabel
+                Layout.fillWidth: true
+                Layout.leftMargin: 18
+                elide: Text.ElideRight
+                font.pixelSize: 13
+                color: Qt.rgba(1, 1, 1, 0.5)
+            }
 
             Button {
                 id: okButton
-                Layout.fillHeight: true
-                flat: true
-                padding: 30
-                font.pixelSize: 25
+                padding: 14
+                leftPadding: 20
+                rightPadding: 22
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
                 focusPolicy: Qt.NoFocus
+                Material.background: "white"
+                Material.foreground: "#0b0f17"
                 Material.roundedScale: Material.SmallScale
                 onClicked: dialog.accepted()
                 icon.source: "qrc:/icons/options.svg";
-                icon.width: 50
-                icon.height: 50
+                icon.width: 28
+                icon.height: 28
+                icon.color: "transparent"
             }
-        }
-
-        Label {
-            id: titleLabel
-            anchors.centerIn: parent
-            horizontalAlignment: Qt.AlignHCenter
-            verticalAlignment: Qt.AlignVCenter
-            font.bold: true
-            font.pixelSize: 26
-        }
-
-        Label {
-            id: headerLabel
-            anchors {
-                top: parent.top
-                left: titleLabel.right
-                right: parent.right
-                verticalCenter: parent.verticalCenter
-            }
-            horizontalAlignment: Qt.AlignHCenter
-            verticalAlignment: Qt.AlignVCenter
-            font.bold: true
-            font.pixelSize: 14
         }
     }
 
     Item {
-        id: contentItem
+        id: dialogContent
         anchors {
             top: toolBar.bottom
             left: parent.left
@@ -128,4 +147,5 @@ Item {
             bottom: parent.bottom
         }
     }
+    } // fontScope
 }

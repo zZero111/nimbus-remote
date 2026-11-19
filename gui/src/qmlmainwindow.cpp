@@ -7,6 +7,32 @@
 #include "chiaki/time.h"
 #include "streamsession.h"
 
+#include <QScreen>
+
+// A saved window size can be larger than the screen now offers (for example after the UI scale
+// changed, which shrinks the screen in logical pixels): keep the window fully on its screen.
+static QRect fitToScreen(const QRect &saved)
+{
+	QScreen *screen = QGuiApplication::screenAt(saved.center());
+	if (!screen)
+		screen = QGuiApplication::primaryScreen();
+	if (!screen)
+		return saved;
+	const QRect avail = screen->availableGeometry();
+	QRect r = saved;
+	r.setWidth(qMin(r.width(), avail.width()));
+	r.setHeight(qMin(r.height(), avail.height()));
+	if (r.right() > avail.right())
+		r.moveRight(avail.right());
+	if (r.bottom() > avail.bottom())
+		r.moveBottom(avail.bottom());
+	if (r.left() < avail.left())
+		r.moveLeft(avail.left());
+	if (r.top() < avail.top())
+		r.moveTop(avail.top());
+	return r;
+}
+
 #include <qpa/qplatformnativeinterface.h>
 
 #define PL_LIBAV_IMPLEMENTATION 0
@@ -2970,7 +2996,7 @@ void QmlMainWindow::show()
     {
         if(!settings->GetGeometry().isEmpty())
         {
-            setGeometry(settings->GetGeometry());
+            setGeometry(fitToScreen(settings->GetGeometry()));
             showNormal();
         }
         else
@@ -5327,7 +5353,7 @@ renderer_backend_ready:
             {
                 if(!this->settings->GetGeometry().isEmpty())
                 {
-                    setGeometry(this->settings->GetGeometry());
+                    setGeometry(fitToScreen(this->settings->GetGeometry()));
                     normalTime();
                 }
                 else

@@ -114,6 +114,52 @@ static const QMap<QString, CLICommand> cli_commands = {
 int RunStream(QGuiApplication &app, const StreamSessionConnectInfo &connect_info);
 int RunMain(QGuiApplication &app, Settings *settings, bool exit_app_on_stream_exit);
 
+#if defined(Q_OS_WIN)
+#include <windows.h>
+// The interface is designed for about 1080 rows of logical pixels. A 1440p or 4K monitor left at
+// 100% Windows scaling has far more, so everything looked small and left the window empty.
+// Scale the whole UI (menus and popups included) to the screen, like Windows scaling would.
+// Laptops and screens already scaled by Windows come out at 1.0 and are left alone.
+// NIMBUS_UI_SCALE=1.25 (or any value) overrides it; QT_SCALE_FACTOR set by the user wins.
+static void ApplyNimbusUiScale()
+{
+	if(qEnvironmentVariableIsSet("QT_SCALE_FACTOR"))
+		return;
+	double scale = 0.0;
+	if(qEnvironmentVariableIsSet("NIMBUS_UI_SCALE"))
+		scale = qEnvironmentVariable("NIMBUS_UI_SCALE").toDouble();
+	else
+	{
+		DEVMODEW dm = {};
+		dm.dmSize = sizeof(dm);
+		if(!EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &dm) || dm.dmPelsHeight == 0)
+			return;
+		// The process isn't DPI-aware yet (Qt sets that up later), and an unaware thread is always
+		// told 96 dpi, so ask from a briefly per-monitor-aware thread context instead
+		UINT dpi = 96;
+		HMODULE user32 = GetModuleHandleW(L"user32.dll");
+		using SetCtx = void *(WINAPI *)(void *);
+		using GetDpi = UINT (WINAPI *)();
+		auto set_ctx = user32 ? reinterpret_cast<SetCtx>(reinterpret_cast<void *>(GetProcAddress(user32, "SetThreadDpiAwarenessContext"))) : nullptr;
+		auto get_dpi = user32 ? reinterpret_cast<GetDpi>(reinterpret_cast<void *>(GetProcAddress(user32, "GetDpiForSystem"))) : nullptr;
+		if(set_ctx && get_dpi)
+		{
+			void *previous = set_ctx(reinterpret_cast<void *>(static_cast<intptr_t>(-4))); // PER_MONITOR_AWARE_V2
+			dpi = get_dpi();
+			if(previous)
+				set_ctx(previous);
+		}
+		const double windows_scale = dpi > 0 ? dpi / 96.0 : 1.0;
+		scale = (dm.dmPelsHeight / 1080.0) / windows_scale;
+		scale = qBound(1.0, scale, 1.5);
+		// Snap to quarter steps so text renders crisply
+		scale = qRound(scale * 4.0) / 4.0;
+	}
+	if(scale > 1.01 && scale < 4.0)
+		qputenv("QT_SCALE_FACTOR", QByteArray::number(scale, 'f', 2));
+}
+#endif
+
 int real_main(int argc, char *argv[])
 {
 	qRegisterMetaType<DiscoveryHost>();
@@ -162,6 +208,7 @@ int real_main(int argc, char *argv[])
 	// which the pack also provides. Setting either variable yourself keeps your choice.
 	if(!qEnvironmentVariableIsSet("VK_LOADER_DRIVERS_DISABLE") && !qEnvironmentVariableIsSet("VK_LOADER_DRIVERS_SELECT"))
 		qputenv("VK_LOADER_DRIVERS_DISABLE", "*dzn*");
+	ApplyNimbusUiScale();
 #endif
 #if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
 	qputenv("ANV_VIDEO_DECODE", "1");
