@@ -297,6 +297,12 @@ QmlBackend::QmlBackend(Settings *settings, QmlMainWindow *window)
     qmlRegisterUncreatableType<QmlMainWindow>(uri, 1, 0, "ChiakiWindow", {});
     qmlRegisterUncreatableType<QmlSettings>(uri, 1, 0, "ChiakiSettings", {});
     qmlRegisterUncreatableType<StreamSession>(uri, 1, 0, "ChiakiSession", {});
+    qmlRegisterUncreatableType<Updater>(uri, 1, 0, "NimbusUpdater", {});
+
+    // Self-update: check shortly after launch; a downloaded update installs when the app closes
+    updater_ = new Updater(this);
+    QTimer::singleShot(3000, updater_, &Updater::check);
+    connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, updater_, &Updater::installOnExitIfReady);
 
     QObject *frame_obj = new QObject();
     frame_thread = new QThread(frame_obj);

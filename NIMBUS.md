@@ -8,6 +8,16 @@ A PS5/PS4 Remote Play client for Windows, built on [chiaki-ng](https://github.co
 Get the latest `NimbusRemote-win64-*.zip` from this repository's **Releases** page, unzip it anywhere and run `chiaki.exe`.
 No install is needed. Each PC keeps its own settings and console registration.
 
+**Updates are automatic** from `nimbus.5` on. On launch the app checks for a newer release and downloads it in the background. Then either click **Restart & update** on the home screen, or just close the app and it installs on exit. It never updates during a stream. If an update fails, the details are in `%TEMP%\NimbusRemoteUpdate\install.log`. Set the environment variable `NIMBUS_NO_UPDATE=1` to turn updates off.
+
+## Publishing a release
+
+```powershell
+powershell -ExecutionPolicy Bypass -File nimbus\release.ps1 -Number 6 -Notes "What changed"
+```
+
+This stamps the version into `gui/include/appinfo.h`, builds, packages, zips, commits, pushes and creates the GitHub release that installed copies update to.
+
 ## What's different from chiaki-ng
 
 | Feature | Where |
@@ -28,6 +38,7 @@ No install is needed. Each PC keeps its own settings and console registration.
 | **Decoding on its own thread**: the network thread only queues video (at most about 66 ms); a dedicated thread decodes. Heavy frames no longer stall the network, and a PC that falls behind skips to a fresh keyframe instead of building up delay. | `gui/src/asyncdecoder.cpp`, `gui/src/streamsession.cpp` |
 | **Stream socket receive buffer of 512 KB** (was 100 KB), so keyframe bursts aren't dropped on Wi-Fi | `lib/src/takion.c` |
 | **Intel laptops tune themselves**: with the decoder on Auto, Intel integrated graphics use `d3d11va`, and the first stream switches High Quality render presets to Default | `gui/src/qmlbackend.cpp`, `gui/src/qmlmainwindow.cpp` |
+| **Self-update** from GitHub releases: background download, "Restart & update" button or install on exit | `gui/src/updater.cpp`, `gui/src/qml/MainView.qml` |
 | **Network hint**: when the PC is online only through phone USB tethering or VPNs, the home screen explains why no console can be found | `gui/src/netcheck.cpp`, `gui/src/qml/MainView.qml` |
 | **Own logo** on the home screen (Settings > About still credits chiaki-ng) | `gui/res/nimbus-logo-white.svg` |
 | **Own settings store**: on first launch it copies an existing chiaki-ng setup (consoles, PSN login, mappings, profiles) and never changes the original | `gui/src/main.cpp` |

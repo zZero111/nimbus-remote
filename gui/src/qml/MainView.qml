@@ -696,13 +696,51 @@ Pane {
         }
     }
 
+    // Self-update status: shown while downloading and once an update is ready
+    Rectangle {
+        id: updateBanner
+        readonly property var upd: Chiaki.updater
+        visible: upd && (upd.state === "downloading" || upd.state === "ready")
+        anchors {
+            right: parent.right
+            bottom: versionLabel.top
+            rightMargin: 20
+            bottomMargin: 8
+        }
+        radius: 10
+        color: Qt.rgba(0, 0.65, 1, 0.15)
+        border.color: Material.accent
+        border.width: 1
+        implicitWidth: updateRow.implicitWidth + 28
+        implicitHeight: updateRow.implicitHeight + 14
+        RowLayout {
+            id: updateRow
+            anchors.centerIn: parent
+            spacing: 12
+            Label {
+                text: !updateBanner.upd ? "" : updateBanner.upd.state === "downloading"
+                    ? qsTr("Downloading update %1… %2%").arg(updateBanner.upd.latestVersion).arg(Math.round(updateBanner.upd.progress * 100))
+                    : qsTr("Update %1 ready · installs when you close the app").arg(updateBanner.upd.latestVersion)
+            }
+            Button {
+                visible: updateBanner.upd && updateBanner.upd.state === "ready"
+                text: qsTr("Restart & update")
+                highlighted: true
+                focusPolicy: Qt.NoFocus
+                Material.roundedScale: Material.SmallScale
+                onClicked: Chiaki.updater.installAndRestart()
+            }
+        }
+    }
+
     Label {
+        id: versionLabel
         anchors {
             right: parent.right
             bottom: parent.bottom
             margins: 20
         }
-        text: Qt.application.version
+        text: Chiaki.updater ? Chiaki.updater.currentVersion : Qt.application.version
     }
 
     // Empty state: shown only while no console is listed

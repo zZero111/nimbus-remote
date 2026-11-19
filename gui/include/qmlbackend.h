@@ -5,6 +5,7 @@
 #include "qmlmainwindow.h"
 #include "qmlcontroller.h"
 #include "qmlsettings.h"
+#include "updater.h"
 
 #include <QObject>
 #include <QMutex>
@@ -80,6 +81,7 @@ class QmlBackend : public QObject
     Q_OBJECT
     Q_PROPERTY(QmlMainWindow* window READ qmlWindow CONSTANT)
     Q_PROPERTY(QmlSettings* settings READ qmlSettings CONSTANT)
+    Q_PROPERTY(Updater* updater READ updater CONSTANT)
     Q_PROPERTY(StreamSession* session READ qmlSession NOTIFY sessionChanged)
     Q_PROPERTY(QList<QmlController*> controllers READ qmlControllers NOTIFY controllersChanged)
     Q_PROPERTY(bool discoveryEnabled READ discoveryEnabled WRITE setDiscoveryEnabled NOTIFY discoveryEnabledChanged)
@@ -212,6 +214,7 @@ public:
     Q_INVOKABLE void autoRegister();
     /// Empty if the PC is on a normal local network, else why consoles can't be discovered
     Q_INVOKABLE QString localNetworkWarning() const;
+    Updater *updater() const { return updater_; }
 #if CHIAKI_GUI_ENABLE_STEAM_SHORTCUT
     Q_INVOKABLE void createSteamShortcut(QString shortcutName, QString launchOptions, const QJSValue &callback, QString steamDir);
 #endif
@@ -303,6 +306,7 @@ private:
     DisplayServer regist_dialog_server;
     StreamSessionConnectInfo session_info = {};
     int psn_start_retries = 0; // automatic retries of a timed-out PSN session start, per user action
+    Updater *updater_ = nullptr;
     SystemdInhibit *sleep_inhibit = {};
 #ifdef Q_OS_MACOS
     MacWakeSleep *mac_wake_sleep = {};
