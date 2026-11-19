@@ -279,6 +279,96 @@ Item {
         }
     }
 
+    // Short notice for screenshot results; never takes focus from the stream
+    Rectangle {
+        id: streamToast
+        property string message: ""
+        anchors {
+            top: parent.top
+            horizontalCenter: parent.horizontalCenter
+            topMargin: 24
+        }
+        z: 100
+        radius: 10
+        color: Qt.rgba(0, 0, 0, 0.75)
+        implicitWidth: toastLabel.implicitWidth + 40
+        implicitHeight: toastLabel.implicitHeight + 20
+        opacity: toastTimer.running ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+
+        function show(text) {
+            message = text;
+            toastTimer.restart();
+        }
+
+        Label {
+            id: toastLabel
+            anchors.centerIn: parent
+            text: streamToast.message
+            color: "white"
+            font.pixelSize: 16
+        }
+        Timer {
+            id: toastTimer
+            interval: 2500
+        }
+        Connections {
+            target: Chiaki.window
+            function onScreenshotSaved(path) { streamToast.show(qsTr("Screenshot saved to %1").arg(path)); }
+            function onScreenshotFailed(error) { streamToast.show(qsTr("Screenshot failed: %1").arg(error)); }
+        }
+        Connections {
+            target: Chiaki.session
+            ignoreUnknownSignals: true
+            function onRecordingSaved(path) { streamToast.show(qsTr("Recording saved to %1").arg(path)); }
+            function onRecordingFailed(error) { streamToast.show(qsTr("Recording failed: %1").arg(error)); }
+        }
+    }
+
+    // Recording indicator: red dot + elapsed time, top left
+    Rectangle {
+        anchors {
+            left: parent.left
+            top: parent.top
+            margins: 20
+        }
+        z: 100
+        visible: !!Chiaki.session && Chiaki.session.recording
+        radius: height / 2
+        color: Qt.rgba(0, 0, 0, 0.6)
+        implicitWidth: recRow.implicitWidth + 24
+        implicitHeight: recRow.implicitHeight + 12
+        Row {
+            id: recRow
+            anchors.centerIn: parent
+            spacing: 8
+            Rectangle {
+                width: 12
+                height: 12
+                radius: 6
+                color: "#ff3b30"
+                anchors.verticalCenter: parent.verticalCenter
+                SequentialAnimation on opacity {
+                    running: parent.parent.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 0.25; duration: 600 }
+                    NumberAnimation { to: 1.0; duration: 600 }
+                }
+            }
+            Label {
+                color: "white"
+                font.pixelSize: 15
+                font.bold: true
+                text: {
+                    const s = Chiaki.session ? Math.floor(Chiaki.session.recordingSeconds) : 0;
+                    const mm = Math.floor(s / 60), ss = s % 60;
+                    return "REC " + mm + ":" + (ss < 10 ? "0" : "") + ss;
+                }
+            }
+        }
+    }
+
     RoundButton {
         anchors {
             right: parent.right
@@ -331,6 +421,30 @@ Item {
                         color: Material.accent
                         font.bold: true
                         font.pixelSize: 28
+                    }
+                }
+
+                Label {
+                    Layout.alignment: Qt.AlignRight
+                    text: qsTr("ping")
+                    font.pixelSize: 15
+                    readonly property real ping: Chiaki.session ? Chiaki.session.pingMs : 0
+                    opacity: Chiaki.session && ping > 0 ? 1 : 0
+                    visible: opacity > 0
+
+                    Behavior on opacity { NumberAnimation { duration: 250 } }
+
+                    Label {
+                        anchors {
+                            right: parent.left
+                            baseline: parent.baseline
+                            rightMargin: 5
+                        }
+                        text: parent.visible ? qsTr("%1 ms").arg(parent.ping.toFixed(0)) : ""
+                        font.bold: true
+                        // green < 30 ms, amber < 80 ms, red above
+                        color: parent.ping < 30 ? "#a5d6a7" : (parent.ping < 80 ? "#ffe082" : "#ef9a9a")
+                        font.pixelSize: 18
                     }
                 }
 
@@ -544,8 +658,52 @@ Item {
                 checked: Chiaki.session && !Chiaki.session.muted
                 onToggled: Chiaki.session.muted = !Chiaki.session.muted
                 KeyNavigation.left: volumeSlider
-                KeyNavigation.right: zoomButton
+                KeyNavigation.right: statsButton
                 Keys.onReturnPressed: toggled()
+                Keys.onEscapePressed: menuController.close()
+            }
+
+            ToolButton {
+                id: statsButton
+                text: qsTr("Stats")
+                padding: 10
+                checkable: true
+                checked: Chiaki.settings.showStreamStats
+                onToggled: Chiaki.settings.showStreamStats = !Chiaki.settings.showStreamStats
+                KeyNavigation.left: muteButton
+                KeyNavigation.right: screenshotButton
+                Keys.onReturnPressed: toggled()
+                Keys.onEscapePressed: menuController.close()
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Bitrate, ping, packet loss and dropped frames overlay")
+            }
+
+            ToolButton {
+                id: screenshotButton
+                text: qsTr("Snap")
+                padding: 10
+                enabled: Chiaki.window.hasVideo
+                onClicked: Chiaki.window.takeScreenshot()
+                KeyNavigation.left: statsButton
+                KeyNavigation.right: recordButton
+                Keys.onReturnPressed: clicked()
+                Keys.onEscapePressed: menuController.close()
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Save a screenshot (F12)")
+            }
+
+            ToolButton {
+                id: recordButton
+                Layout.rightMargin: 20
+                text: Chiaki.session && Chiaki.session.recording ? qsTr("■ Stop") : qsTr("● Rec")
+                padding: 10
+                enabled: Chiaki.session && Chiaki.session.connected
+                onClicked: Chiaki.session.toggleRecording()
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Record the stream without re-encoding (F9)")
+                KeyNavigation.left: screenshotButton
+                KeyNavigation.right: zoomButton
+                Keys.onReturnPressed: clicked()
                 Keys.onEscapePressed: menuController.close()
             }
 
@@ -556,7 +714,7 @@ Item {
                 checkable: true
                 checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
                 onToggled: Chiaki.window.videoMode = Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom ? ChiakiWindow.VideoMode.Normal : ChiakiWindow.VideoMode.Zoom
-                KeyNavigation.left: muteButton
+                KeyNavigation.left: recordButton
                 KeyNavigation.right: {
                     if(Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom)
                         zoomFactor

@@ -70,6 +70,7 @@ set(SOURCE_FILES
 		src/frameprocessor.c
 		src/packetstats.c
 		src/discovery.c
+		src/broadcast_win.c
 		src/congestioncontrol.c
 		src/stoppipe.c
 		src/reorderqueue.c

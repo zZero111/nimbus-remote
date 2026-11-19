@@ -84,6 +84,11 @@ bool QmlController::isDualSense() const
     return controller->IsDualSense();
 }
 
+QString QmlController::name() const
+{
+    return controller ? controller->GetName() : QString();
+}
+
 bool QmlController::isHandheld() const
 {
     return controller->IsHandheld();

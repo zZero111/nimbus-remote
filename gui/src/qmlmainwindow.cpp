@@ -1,6 +1,8 @@
 #include "qmlmainwindow.h"
 #include "qmlbackend.h"
 #include "qmlsvgprovider.h"
+#include "appinfo.h"
+#include "screenshot.h"
 #include "chiaki/log.h"
 #include "chiaki/time.h"
 #include "streamsession.h"
@@ -2881,9 +2883,9 @@ void QmlMainWindow::setSettings(Settings *new_settings)
     QString profile = settings->GetCurrentProfile();
     qCCritical(chiakiGui) << "Current Profile: " << profile;
     if(profile.isEmpty())
-        QGuiApplication::setApplicationDisplayName("chiaki-ng");
+        QGuiApplication::setApplicationDisplayName(APP_DISPLAY_NAME);
     else
-        QGuiApplication::setApplicationDisplayName(QString("chiaki-ng:%1").arg(profile));
+        QGuiApplication::setApplicationDisplayName(QString(APP_DISPLAY_NAME ":%1").arg(profile));
     this->setTitle(QGuiApplication::applicationDisplayName());
 }
 
@@ -3019,6 +3021,9 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
 
     if (!frame.frame)
         return;
+
+    if (!startup_warmup_frame_active && screenshot_requested.testAndSetOrdered(1, 0))
+        captureScreenshotFrame(frame.frame);
 
     if (bypass_frame_queue) {
         {
@@ -7647,10 +7652,74 @@ void QmlMainWindow::render()
 
 }
 
+void QmlMainWindow::takeScreenshot()
+{
+    if (!has_video) {
+        emit screenshotFailed(tr("No video to capture"));
+        return;
+    }
+    screenshot_requested.storeRelease(1);
+    // If no new frame arrives soon (static screen), fall back to the last frame kept for redraws
+    QTimer::singleShot(500, this, [this]() {
+        if (!screenshot_requested.testAndSetOrdered(1, 0))
+            return;
+        AVFrame *clone = nullptr;
+        {
+            QMutexLocker locker(&kept_frame_mutex);
+            AVFrame *source = fallback_frame ? fallback_frame : kept_frame;
+            if (source)
+                clone = av_frame_clone(source);
+        }
+        if (!clone) {
+            emit screenshotFailed(tr("No frame available yet"));
+            return;
+        }
+        captureScreenshotFrame(clone);
+        av_frame_free(&clone);
+    });
+}
+
+QString QmlMainWindow::screenshotFolder() const
+{
+    return Screenshot::screenshotDir();
+}
+
+void QmlMainWindow::captureScreenshotFrame(const AVFrame *frame)
+{
+    AVFrame *clone = av_frame_clone(frame);
+    if (!clone) {
+        emit screenshotFailed(tr("Out of memory"));
+        return;
+    }
+    QPointer<QmlMainWindow> self(this);
+    Screenshot::saveAsync(clone, [self](const QString &path, const QString &error) {
+        if (!self)
+            return;
+        QMetaObject::invokeMethod(self, [self, path, error]() {
+            if (!self)
+                return;
+            if (path.isEmpty()) {
+                qCWarning(chiakiGui) << "Screenshot failed:" << error;
+                emit self->screenshotFailed(error);
+            } else {
+                qCInfo(chiakiGui) << "Screenshot saved to" << path;
+                emit self->screenshotSaved(path);
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
 bool QmlMainWindow::handleShortcut(QKeyEvent *event)
 {
     if (event->modifiers() == Qt::NoModifier) {
         switch (event->key()) {
+        case Qt::Key_F12:
+            takeScreenshot();
+            return true;
+        case Qt::Key_F9:
+            if (session)
+                session->toggleRecording();
+            return true;
         case Qt::Key_F11:
             if (windowState() != Qt::WindowFullScreen)
                 fullscreenTime();

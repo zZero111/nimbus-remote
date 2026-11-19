@@ -22,6 +22,8 @@
     <file>ControllerMappingDialog.qml</file>
     <file>AutoConnectView.qml</file>
     <file>PsnView.qml</file>
+    <file>StreamPresetBar.qml</file>
+    <file>presets.js</file>
     <file>controls/Button.qml</file>
     <file>controls/CheckBox.qml</file>
     <file>controls/ComboBox.qml</file>

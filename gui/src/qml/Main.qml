@@ -519,12 +519,61 @@ Item {
         id: remindDialog
     }
 
+    // Connection-quality tracking for the current session, turned into advice when it ends
+    property string sessionAdvice: ""
+    property var lastConsole: null
+    property var sessionQuality: ({ samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0 })
+
+    Timer {
+        id: sessionQualitySampler
+        interval: 2000
+        repeat: true
+        running: !!Chiaki.session && Chiaki.session.connected
+        onTriggered: {
+            const q = root.sessionQuality;
+            const loss = Chiaki.session.averagePacketLoss;
+            if (isFinite(loss)) {
+                q.samples++;
+                q.lossSum += loss;
+                q.lossMax = Math.max(q.lossMax, loss);
+            }
+            const ping = Chiaki.session.pingMs;
+            if (ping > 0) {
+                q.pingSum += ping;
+                q.pingSamples++;
+            }
+        }
+    }
+
+    function finishSessionQuality() {
+        const q = sessionQuality;
+        sessionQuality = { samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0 };
+        // Need ~20 s of data before judging
+        if (q.samples < 10)
+            return;
+        const avgLoss = q.lossSum / q.samples;
+        const avgPing = q.pingSamples ? q.pingSum / q.pingSamples : 0;
+        let problems = [];
+        if (avgLoss > 0.02)
+            problems.push(qsTr("%1% average packet loss").arg((avgLoss * 100).toFixed(1)));
+        if (avgPing > 60)
+            problems.push(qsTr("%1 ms average ping").arg(avgPing.toFixed(0)));
+        sessionAdvice = problems.length
+            ? qsTr("Last session had %1. A lighter preset or a wired connection should make it smoother.").arg(problems.join(qsTr(" and ")))
+            : "";
+    }
+
     Connections {
         target: Chiaki
 
         function onSessionChanged() {
-            if (Chiaki.session)
+            if (Chiaki.session) {
+                root.sessionQuality = { samples: 0, lossSum: 0, lossMax: 0, pingSum: 0, pingSamples: 0 };
+                root.sessionAdvice = "";
                 root.showStreamView();
+            } else {
+                root.finishSessionQuality();
+            }
         }
 
         function onShowPsnView() {

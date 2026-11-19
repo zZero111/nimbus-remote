@@ -1,4 +1,5 @@
 #include "qmlbackend.h"
+#include "netcheck.h"
 #include "qmlsettings.h"
 #include "qmlmainwindow.h"
 #include "streamsession.h"
@@ -879,7 +880,8 @@ QVariantList QmlBackend::hosts() const
         m["name"] = host.GetName();
         m["duid"] = host.GetDuid();
         m["address"] = "";
-        m["registered"] = true;
+        // The "Main PS4 Console" entry is only added once a PS4 is registered
+        m["registered"] = host.IsPS5() ? settings->GetNicknameRegisteredHostRegistered(host.GetName()) : true;
         m["ps5"] = host.IsPS5();
         out.append(m);
     }
@@ -905,6 +907,19 @@ void QmlBackend::checkPsnConnection(const ChiakiErrorCode &err)
             psnSessionStart();
             break;
         case CHIAKI_ERR_HOST_DOWN:
+            // The console often ignores the first PSN session request (still waking, or still
+            // closing a previous session) and answers a second one straight away. Retry once.
+            if(psn_start_retries < 1)
+            {
+                psn_start_retries++;
+                qCWarning(chiakiGui) << "PSN session start timed out, retrying once";
+                teardownSession();
+                const StreamSessionConnectInfo retry_info = session_info;
+                QTimer::singleShot(2000, this, [this, retry_info]() {
+                    createSession(retry_info);
+                });
+                break;
+            }
             setConnectState(PsnConnectState::ConnectFailedStart);
             teardownSession();
             setDiscoveryEnabled(true);
@@ -1430,13 +1445,19 @@ bool QmlBackend::registerHost(const QString &host, const QString &psn_id, const 
     return true;
 }
 
+QString QmlBackend::localNetworkWarning() const
+{
+    return NetCheck::localNetworkWarning();
+}
+
 void QmlBackend::autoRegister()
 {
     const auto &server = regist_dialog_server;
     resume_session = false;
+    psn_start_retries = 0;
     StreamSessionConnectInfo info(
             settings,
-            server.discovery_host.target,
+            server.discovered ? server.discovery_host.target : server.psn_host.GetTarget(),
             QString(),
             QString(),
             QByteArray(),
@@ -1479,7 +1500,9 @@ void QmlBackend::autoRegister()
 void QmlBackend::finishAutoRegister(const ChiakiRegisteredHost &host)
 {
     QString nickname(host.server_nickname);
-    if(!regist_dialog_server.discovery_host.ps5 && regist_dialog_server.discovery_host.host_name != nickname)
+    // Consoles registered over PSN only have psn_host filled in, not discovery_host
+    const bool ps5 = regist_dialog_server.discovered ? regist_dialog_server.discovery_host.ps5 : regist_dialog_server.psn_host.IsPS5();
+    if(!ps5 && regist_dialog_server.discovered && regist_dialog_server.discovery_host.host_name != nickname)
     {
         emit error(tr("PS4 Console Not Main"), tr("Can't proceed...%1 is not your main PS4 console in PSN").arg(regist_dialog_server.discovery_host.host_name));
         return;
@@ -1532,6 +1555,7 @@ void QmlBackend::setWebEngineHints(QQuickWebEngineProfile *profile)
 
 void QmlBackend::connectToHost(int index, QString nickname)
 {
+    psn_start_retries = 0;
     window->setWindowAdjustable(false);
     auto server = displayServerAt(index);
     if (!server.valid)
@@ -1815,8 +1839,10 @@ QmlBackend::DisplayServer QmlBackend::displayServerAt(int index) const
                 server.discovered = false;
                 server.psn_host = std::move(psn_host);
                 server.duid = i.key();
-                server.registered = true;
-                server.registered_host = settings->GetNicknameRegisteredHost(server.psn_host.GetName());
+                server.registered = server.psn_host.IsPS5()
+                    ? settings->GetNicknameRegisteredHostRegistered(server.psn_host.GetName()) : true;
+                if(server.registered)
+                    server.registered_host = settings->GetNicknameRegisteredHost(server.psn_host.GetName());
                 return server;
             }
             j++;
@@ -2632,7 +2658,9 @@ void QmlBackend::updatePsnHostsThread()
         PsnHost psn_host(duid, name, ps5);
         if(!psn_nickname_hosts.contains(name))
             psn_nickname_hosts.insert(name, psn_host);
-	    if(!psn_hosts.contains(duid) && settings->GetNicknameRegisteredHostRegistered(name))
+        // List PS5s even before they're registered with this app: they can be registered
+        // automatically over PSN, so no trip to the home network is needed first
+	    if(!psn_hosts.contains(duid))
 		    psn_hosts.insert(duid, psn_host);
     }
     QByteArray duid_bytes(32, 'A');

@@ -1,2 +1,4 @@
 /test/*.inl linguist-generated=true
 /lib/*.h linguist-language=C
+# Shell scripts must keep Unix line endings or bash fails on Windows checkouts
+*.sh text eol=lf

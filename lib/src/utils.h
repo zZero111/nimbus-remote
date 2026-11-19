@@ -56,6 +56,17 @@ static inline const char *sockaddr_str(struct sockaddr *addr, char *addr_buf, si
 	return NULL;
 }
 
+#ifdef _WIN32
+/**
+ * Windows sends 255.255.255.255 out of the single highest-priority adapter only. With a VPN
+ * such as Radmin, Hamachi or ZeroTier installed that is often the VPN, so the console never sees
+ * discovery or registration. This also sends to every active adapter's own subnet broadcast
+ * (e.g. 192.168.1.255), which Windows routes out of that adapter. Implemented in broadcast_win.c.
+ * @return bytes sent by the last successful send, or -1 if every send failed
+ */
+int chiaki_win_sendto_all_broadcasts(ChiakiLog *log, chiaki_socket_t s, const void *msg, size_t len, int flags, const struct sockaddr_in *to);
+#endif
+
 static inline int sendto_broadcast(ChiakiLog *log, chiaki_socket_t s, const void *msg, size_t len, int flags, const struct sockaddr *to, socklen_t tolen)
 {
 #ifdef __FreeBSD__
@@ -92,6 +103,11 @@ static inline int sendto_broadcast(ChiakiLog *log, chiaki_socket_t s, const void
 		freeifaddrs(ifap);
 		return r;
 	}
+#endif
+#ifdef _WIN32
+	if(to->sa_family == AF_INET && tolen >= (socklen_t)sizeof(struct sockaddr_in)
+		&& ((const struct sockaddr_in *)to)->sin_addr.s_addr == htonl(INADDR_BROADCAST))
+		return chiaki_win_sendto_all_broadcasts(log, s, msg, len, flags, (const struct sockaddr_in *)to);
 #endif
 	return sendto(s, (CHIAKI_SOCKET_BUF_TYPE) msg, len, flags, to, tolen);
 }

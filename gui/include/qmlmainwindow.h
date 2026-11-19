@@ -153,6 +153,9 @@ public:
     Q_INVOKABLE void setStatsOverlayActive(bool active);
     Q_INVOKABLE void noteLoadingTransitionComplete();
     Q_INVOKABLE void presentStartupWarmupFrame(unsigned width, unsigned height, bool hdr);
+    /// Saves the next decoded stream frame as a PNG; result arrives via screenshotSaved/screenshotFailed.
+    Q_INVOKABLE void takeScreenshot();
+    Q_INVOKABLE QString screenshotFolder() const;
     void armVerbosePlaceboQuietWindow();
     bool startupWarmupFrameActive() const { return startup_warmup_frame_active; }
 
@@ -182,8 +185,12 @@ signals:
     void pendingFrameAgeChanged();
     void loadingTransitionCompleteChanged();
     void statsOverlayActiveChanged();
+    void screenshotSaved(const QString &path);
+    void screenshotFailed(const QString &error);
 
 private:
+    QAtomicInt screenshot_requested = 0;
+    void captureScreenshotFrame(const AVFrame *frame);
     friend class BufferedPlaybackPacerThread;
     friend class DeferredPresentPacerThread;
     friend class DeferredSwapThread;
