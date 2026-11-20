@@ -19,6 +19,7 @@ int main(int argc, char *argv[]) { return real_main(argc, argv); }
 #include <controllermanager.h>
 #include <discoverymanager.h>
 #include <qmlmainwindow.h>
+#include "perfmode.h"
 #include <QApplication>
 #include <QtTypes>
 
@@ -220,6 +221,7 @@ int real_main(int argc, char *argv[])
 #endif
 
 	ChiakiErrorCode err = chiaki_lib_init();
+	InstallStreamThreadPriorities();
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		fprintf(stderr, "Chiaki lib init failed: %s\n", chiaki_error_string(err));

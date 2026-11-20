@@ -34,6 +34,7 @@
 #include "recorder.h"
 #include "asyncdecoder.h"
 #include "wifistreaming.h"
+#include "perfmode.h"
 #include "replaybuffer.h"
 
 #include <atomic>
@@ -179,6 +180,7 @@ class StreamSession : public QObject
 		// Video decoding runs on its own thread (see asyncdecoder.h)
 		std::unique_ptr<AsyncVideoDecoder> async_decoder;
 		std::unique_ptr<WifiStreamingMode> wifi_streaming;
+		std::unique_ptr<StreamPerformanceMode> perf_mode;
 		QString diag_hw_decoder;
 		// Recording: the console's encoded video/audio are tapped before decoding
 		StreamRecorder recorder;

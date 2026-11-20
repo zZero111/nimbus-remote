@@ -448,6 +448,13 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		const auto vcodec = h265 ? StreamRecorder::VideoCodec::H265 : StreamRecorder::VideoCodec::H264;
 		async_decoder = std::make_unique<AsyncVideoDecoder>(
 			[this](const uint8_t *buf, size_t size, int32_t frames_lost, bool recovered) {
+				// First call on the decode thread: give it priority over background work
+				static thread_local bool raised = false;
+				if(!raised)
+				{
+					RaiseCurrentThreadPriority(false);
+					raised = true;
+				}
 				return chiaki_ffmpeg_decoder_video_sample_cb(const_cast<uint8_t *>(buf), size, frames_lost, recovered, ffmpeg_decoder);
 			},
 			[this]() {
@@ -786,6 +793,7 @@ StreamSession::~StreamSession()
 		async_decoder.reset();
 	}
 	wifi_streaming.reset();
+	perf_mode.reset();
 	chiaki_session_fini(&session);
 	chiaki_opus_decoder_fini(&opus_decoder);
 	chiaki_opus_encoder_fini(&opus_encoder);
@@ -868,6 +876,9 @@ void StreamSession::Start()
 	// Stop Windows' periodic Wi-Fi scans from causing loss bursts for as long as we stream
 	if(!wifi_streaming)
 		wifi_streaming = std::make_unique<WifiStreamingMode>();
+	// Precise timers, no power throttling, higher priority, for as long as we stream
+	if(!perf_mode)
+		perf_mode = std::make_unique<StreamPerformanceMode>();
 	ChiakiErrorCode err = chiaki_session_start(&session);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
@@ -3076,6 +3087,7 @@ QString StreamSession::DiagnosticsSummary()
 	}
 	out << QStringLiteral("Wi-Fi streaming mode: %1").arg(wifi_streaming && wifi_streaming->adapters() > 0
 		? QStringLiteral("on (%1 adapter)").arg(wifi_streaming->adapters()) : QStringLiteral("not used"));
+	out << QStringLiteral("Performance mode: %1").arg(perf_mode ? perf_mode->summary() : QStringLiteral("off"));
 	return out.join('\n');
 }
 
