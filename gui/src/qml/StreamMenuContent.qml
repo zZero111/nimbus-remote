@@ -39,7 +39,7 @@ FocusScope {
     }
 
     // Left/right between the cards that are currently shown
-    readonly property var order: [closeCard, volumeCard, micCard, statsCard, snapCard, recCard, replayCard, clipCard, lighterCard, pictureCard, advancedCard, zoomCard, zoomLevelCard, stretchCard, displayCard]
+    readonly property var order: [closeCard, volumeCard, micCard, statsCard, snapCard, recCard, replayCard, clipCard, lighterCard, pictureCard, sharpCard, advancedCard, zoomCard, zoomLevelCard, stretchCard, displayCard]
     function move(from, step) {
         const list = order.filter(c => c.visible && c.enabled);
         let i = list.indexOf(from);
@@ -403,6 +403,20 @@ FocusScope {
             caption: menu.presets[menu.presetIndex()].name
             ToolTip.text: menu.presets[menu.presetIndex()].tip + " " + qsTr("(press to switch)")
             onClicked: menu.cyclePreset()
+        }
+
+        // Extra sharpening on the final image; press to step Off -> Low -> ... -> Max
+        Card {
+            id: sharpCard
+            readonly property var names: [qsTr("Sharpen off"), qsTr("Sharpen low"), qsTr("Sharpen medium"), qsTr("Sharpen high"), qsTr("Sharpen max")]
+            cardWidth: 150
+            lit: Chiaki.window.sharpening > 0
+            iconSource: "qrc:/icons/tune-24px.svg"
+            caption: names[Math.max(0, Math.min(4, Chiaki.window.sharpening))]
+            ToolTip.text: qsTr("AMD FidelityFX sharpening on the final picture, on top of any upscaling. Up / down or press to change.")
+            Keys.onUpPressed: Chiaki.window.sharpening = Math.min(4, Chiaki.window.sharpening + 1)
+            Keys.onDownPressed: Chiaki.window.sharpening = Math.max(0, Chiaki.window.sharpening - 1)
+            onClicked: Chiaki.window.sharpening = (Chiaki.window.sharpening + 1) % 5
         }
 
         Card {

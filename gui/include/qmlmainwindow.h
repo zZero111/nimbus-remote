@@ -62,6 +62,8 @@ class QmlMainWindow : public QWindow
     Q_PROPERTY(bool loadingTransitionComplete READ loadingTransitionComplete NOTIFY loadingTransitionCompleteChanged)
     Q_PROPERTY(VideoMode videoMode READ videoMode WRITE setVideoMode NOTIFY videoModeChanged)
     Q_PROPERTY(float ZoomFactor READ zoomFactor WRITE setZoomFactor NOTIFY zoomFactorChanged)
+    /// Extra sharpening on the final image: 0 Off, 1 Low, 2 Medium, 3 High, 4 Max (saved)
+    Q_PROPERTY(int sharpening READ sharpening WRITE setSharpening NOTIFY sharpeningChanged)
     Q_PROPERTY(VideoPreset videoPreset READ videoPreset WRITE setVideoPreset NOTIFY videoPresetChanged)
     Q_PROPERTY(bool directStream READ directStream NOTIFY directStreamChanged)
     Q_PROPERTY(int runtimeRendererBackend READ runtimeRendererBackend CONSTANT)
@@ -131,6 +133,8 @@ public:
 
     bool amdCard() const;
     bool nvidiaCard() const;
+    int sharpening() const { return sharpening_level.load(); }
+    void setSharpening(int level);
     bool intelIntegratedCard() const { return intel_integrated_card; }
     /// GPU name and driver for diagnostics ("OpenGL renderer" when Vulkan isn't in use).
     QString gpuDescription() const
@@ -188,6 +192,7 @@ signals:
     void videoModeChanged();
     void zoomFactorChanged();
     void videoPresetChanged();
+    void sharpeningChanged();
     void menuRequested();
     void directStreamChanged();
     void queueDepthAverageChanged();
@@ -482,6 +487,9 @@ private:
     const struct pl_hook *fsr_hook = nullptr;
     const struct pl_hook *fsrcnnx_hook_8 = nullptr;
     const struct pl_hook *fsrcnnx_hook_16 = nullptr;
+    // Sharpening levels 1..4 (Low, Medium, High, Max); index 0 unused (Off)
+    const struct pl_hook *sharpen_hooks[5] = {};
+    std::atomic<int> sharpening_level{0};
 
     struct {
         PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;

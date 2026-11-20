@@ -49,6 +49,7 @@ The same release also starts `nimbus-linux.yml` (AppImage, about 30-60 minutes) 
 | **Wi-Fi streaming mode**: while streaming, Windows' background Wi-Fi scans (a stutter about once a minute) are paused and the adapter is put in media streaming mode, like Moonlight does. Windows undoes it when the stream ends. | `gui/src/wifistreaming.cpp` |
 | **PS5-style home screen**: a row of console tiles (left/right to move, the selected one grows), the console's name large underneath with a white Play button, a per-console quality selector, a clock, and controller button hints along the bottom. The whole screen scales with the window so it fills a large monitor. | `gui/src/qml/MainView.qml`, `gui/src/qml/StreamPresetBar.qml` |
 | **"30 fps games" preset** (GTA 6 and other 30 fps games): streams 1080p at 30 fps, so each real frame is sent once with twice the data, instead of every frame twice at 60. Smoother timing, more detail, and the right input for frame generation: pair it with AMD Fluid Motion Frames (AMD Software) or Lossless Scaling to see 60+ fps | `gui/src/qml/presets.js` |
+| **Sharpening control**: "Sharpen" card in the stream menu (Off / Low / Medium / High / Max, saved). AMD FidelityFX RCAS runs on the final image at screen resolution, after any upscaler, so it works with Upscale, Sharp or no upscaling. Measured on the GPU: +5% / +8% / +11% / +15% edge contrast, brightness unchanged | `gui/res/shaders/RCAS_sharpen.glsl`, `gui/src/qmlmainwindow.cpp` |
 | **Upscaling, clearly named**: the in-game Picture card now reads Fast / Sharp / Upscale (AMD FSR or the FSRCNNX AI upscaler when the window is bigger than the stream) / Upscale Max | `gui/src/qml/StreamMenuContent.qml` |
 | **Streaming performance mode** (Windows): while streaming, 1 ms timer resolution, no power throttling ("efficiency mode"), above-normal process priority; the stream-receive and controller-input threads run at highest priority and the decode, send, crypto and control threads above normal. All undone when the stream ends; shown in Copy diagnostics | `gui/src/perfmode.cpp` |
 | **Correct ping on wired connections**: the console reports ping in seconds or milliseconds; the unit is now chosen by comparing with the ping measured at connect (a 1.4 ms LAN no longer reads as 1400 ms) | `lib/src/streamconnection.c` |
@@ -107,6 +108,7 @@ Tests:
 bash nimbus/test-screenshot.sh   # colour conversion for NV12 / P010 HDR screenshots (8 checks)
 bash nimbus/test-recorder.sh     # encodes H.264 + Opus, records mid-stream, decodes the file back (20 checks)
 bash nimbus/test-asyncdecoder.sh # decode thread: order, Wi-Fi bursts, non-blocking queue, overflow recovery, errors (18 checks)
+bash nimbus/test-sharpen.sh      # GPU render 1080p -> 1440p: FSRCNNX + each sharpening level compiles, runs, gets sharper (needs Vulkan)
 bash nimbus/test-replay.sh       # instant replay: 45 s in, ~35 s clip from a keyframe, decodes cleanly, memory cap (15 checks)
 ```
 
