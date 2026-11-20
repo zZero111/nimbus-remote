@@ -736,6 +736,9 @@ Item {
     readonly property var lighterPreset: {
         if (!currentPreset)
             return Presets.byKey("performance");
+        // "30 fps games" is its own choice, not a step on the Performance-Balanced-Quality ladder
+        if (currentPreset.special)
+            return null;
         const i = Presets.list.indexOf(currentPreset);
         return i > 0 ? Presets.list[i - 1] : null;
     }

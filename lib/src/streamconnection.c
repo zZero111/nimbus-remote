@@ -705,9 +705,24 @@ static void stream_connection_takion_data_idle(ChiakiStreamConnection *stream_co
 			 q.disable_upstream_audio, q.rtt, q.loss);
 		if(q.has_rtt && q.rtt > 0.0)
 		{
-			// The console reports RTT in seconds (values like 0.0050); guard against a build
-			// that reports milliseconds instead so the readout stays sensible either way.
-			double rtt_ms = q.rtt < 10.0 ? q.rtt * 1000.0 : q.rtt;
+			// Unit of q.rtt isn't documented: seconds (0.0050) or milliseconds (5.0) both occur.
+			// A fixed cut-off misread a 1.4 ms wired LAN as 1400 ms, so pick the reading closest
+			// to the RTT Senkusha measured at connect; without that, below 0.5 must be seconds
+			// (a 500+ ms stream isn't playable) and anything else is milliseconds.
+			const double as_ms = q.rtt;
+			const double from_s = q.rtt * 1000.0;
+			double rtt_ms;
+			const uint64_t ref_us = stream_connection->session->rtt_us;
+			if(ref_us > 0 && ref_us != 1000)
+			{
+				const double ref_ms = (double)ref_us / 1000.0;
+				// How many times off each reading is (>= 1); the smaller one wins
+				const double d_ms = as_ms > ref_ms ? as_ms / ref_ms : ref_ms / as_ms;
+				const double d_s = from_s > ref_ms ? from_s / ref_ms : ref_ms / from_s;
+				rtt_ms = d_ms <= d_s ? as_ms : from_s;
+			}
+			else
+				rtt_ms = q.rtt < 0.5 ? from_s : as_ms;
 			if(rtt_ms < 5000.0)
 				stream_connection->console_rtt_ms = rtt_ms;
 		}

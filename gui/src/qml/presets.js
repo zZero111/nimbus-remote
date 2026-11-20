@@ -24,6 +24,17 @@ var list = [
         hint: "1080p, 40 Mbps, HDR when supported",
         local:  { res: 4, fps: 60, bitrate: 40000, codec: 2 },
         remote: { res: 4, fps: 60, bitrate: 0, codec: 1 }
+    },
+    {
+        // A 30 fps game (GTA 6) streamed at 60 fps sends every frame twice, so network jitter
+        // shows as uneven 1-2-3 frame timing, and frame generation has nothing new to work with.
+        // Streaming at 30 fps sends each real frame once, with twice the data per frame.
+        key: "fps30",
+        name: "30 fps games",
+        special: true,
+        hint: "For 30 fps games like GTA 6: each real frame sent once, with more detail. Pair with AMD Fluid Motion Frames or Lossless Scaling for 60+ fps",
+        local:  { res: 4, fps: 30, bitrate: 30000, codec: 1 },
+        remote: { res: 4, fps: 30, bitrate: 0, codec: 1 }
     }
 ];
 

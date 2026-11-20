@@ -20,11 +20,11 @@ FocusScope {
     property alias initialFocusItem: closeCard
 
     readonly property var presets: [
-        { value: ChiakiWindow.VideoPreset.Default, name: qsTr("Default") },
-        { value: ChiakiWindow.VideoPreset.HighQuality, name: qsTr("High Quality") },
-        { value: ChiakiWindow.VideoPreset.HighQualitySpatial, name: qsTr("HQ + Spatial") },
-        { value: ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial, name: qsTr("HQ + Adv. Spatial") },
-        { value: ChiakiWindow.VideoPreset.Custom, name: qsTr("Custom") }
+        { value: ChiakiWindow.VideoPreset.Default, name: qsTr("Fast picture"), tip: qsTr("Lightest on the GPU") },
+        { value: ChiakiWindow.VideoPreset.HighQuality, name: qsTr("Sharp picture"), tip: qsTr("High-quality scaling and debanding") },
+        { value: ChiakiWindow.VideoPreset.HighQualitySpatial, name: qsTr("Upscale"), tip: qsTr("When the window is bigger than the stream, sharpens it with AMD FSR, or the FSRCNNX AI upscaler for big jumps (1080p to 1440p/4K)") },
+        { value: ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial, name: qsTr("Upscale Max"), tip: qsTr("Like Upscale with the larger FSRCNNX AI model: sharpest, needs a strong GPU") },
+        { value: ChiakiWindow.VideoPreset.Custom, name: qsTr("Custom picture"), tip: qsTr("Your own libplacebo settings") }
     ]
     function presetIndex() {
         for (let i = 0; i < presets.length; i++)
@@ -401,7 +401,7 @@ FocusScope {
             cardWidth: 150
             iconSource: "qrc:/icons/picture-24px.svg"
             caption: menu.presets[menu.presetIndex()].name
-            ToolTip.text: qsTr("Picture processing. Press to switch: Default is lightest, higher presets look sharper but need a stronger GPU")
+            ToolTip.text: menu.presets[menu.presetIndex()].tip + " " + qsTr("(press to switch)")
             onClicked: menu.cyclePreset()
         }
 
