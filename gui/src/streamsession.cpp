@@ -3054,11 +3054,17 @@ void StreamSession::TriggerFfmpegFrameAvailable()
 		measured_bitrate = session.stream_connection.measured_bitrate;
 		emit MeasuredBitrateChanged();
 	}
-	// Prefer the console's live RTT; fall back to the one measured while connecting
-	double new_ping = session.stream_connection.console_rtt_ms;
+	// Ping = the network round trip measured while connecting (Senkusha echo test). The figure the
+	// console reports during the stream isn't a network round trip: on a wired home network it
+	// read 55-105 ms while the echo test measured 1.7 ms. It's kept for diagnostics only, and
+	// used as the ping only when the connect-time test didn't run.
+	console_reported_ms = session.stream_connection.console_rtt_ms;
+	double new_ping = 0.0;
 	// session.c stores exactly 1000 us as a placeholder when the connect-time test fails
-	if(new_ping <= 0.0 && session.rtt_us > 0 && session.rtt_us != 1000)
+	if(session.rtt_us > 0 && session.rtt_us != 1000)
 		new_ping = session.rtt_us / 1000.0;
+	else
+		new_ping = console_reported_ms;
 	if(qAbs(new_ping - ping_ms) >= 0.5)
 	{
 		ping_ms = new_ping;
@@ -3075,6 +3081,7 @@ QString StreamSession::DiagnosticsSummary()
 	out << QStringLiteral("Decoder: %1").arg(diag_hw_decoder.isEmpty() ? QStringLiteral("unknown") : diag_hw_decoder);
 	if(connect_timer.isValid())
 		out << QStringLiteral("Session length: %1 s").arg(connect_timer.elapsed() / 1000);
+	out << QStringLiteral("Console-reported latency at end: %1 ms (not network ping)").arg(console_reported_ms, 0, 'f', 0);
 	out << QStringLiteral("At end: %1 Mbps, ping %2 ms, packet loss %3%, frames lost %4")
 		.arg(GetMeasuredBitrate(), 0, 'f', 1).arg(GetPingMs(), 0, 'f', 0)
 		.arg(GetAveragePacketLoss() * 100.0, 0, 'f', 1).arg(GetFramesLost());

@@ -182,6 +182,7 @@ class StreamSession : public QObject
 		std::unique_ptr<WifiStreamingMode> wifi_streaming;
 		std::unique_ptr<StreamPerformanceMode> perf_mode;
 		QString diag_hw_decoder;
+		double console_reported_ms = 0.0;
 		// Recording: the console's encoded video/audio are tapped before decoding
 		StreamRecorder recorder;
 		std::atomic<bool> recording_active{false};
