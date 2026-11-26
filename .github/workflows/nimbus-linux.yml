@@ -23,7 +23,7 @@ jobs:
           sudo apt-get update
           sudo apt-get -y install podman
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
           submodules: recursive
@@ -53,7 +53,7 @@ jobs:
           chmod +x "$OUT"
           echo "OUT=$OUT" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.OUT }}
           path: chiaki-ng/${{ env.OUT }}
